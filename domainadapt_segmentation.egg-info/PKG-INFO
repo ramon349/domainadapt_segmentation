@@ -1,0 +1,16 @@
+Metadata-Version: 2.1
+Name: domainadapt-segmentation
+Version: 0.1
+Summary: research project
+Author: Ramon Luis Correa-Medero
+License: TBD
+Keywords: Deep Learning,Machine Learning
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Environment :: Console
+Classifier: Programming Language :: Python :: 3.`0
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
+# domainadapt_segmentation
+Repository for benchmarking code for domain adaptation of 3D segmentation models 

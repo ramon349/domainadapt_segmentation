@@ -1,0 +1,18 @@
+./domainadapt_segmentation/batch_iterators/train_iterators.py:28:    global_step_count = 0  # TODO: resumable training would require a rewind of the clock. i.e aware of epoch and steps
+./domainadapt_segmentation/batch_iterators/train_iterators.py:31:    )  # TODO think about how you could perhaps continue training
+./domainadapt_segmentation/train.py:113:        # TODO add support for continuing training by providing optinal path to checkpoint
+./domainadapt_segmentation/train.py:120:    # TODO: make the dice metric and loss function modifiable
+./domainadapt_segmentation/train.py:140:    #TODO: ADD TESTING OF THE BEST MODEL 
+./domainadapt_segmentation/test.py:36:    bin_preds = True #TODO: is it woth having continious outputs 
+./domainadapt_segmentation/test.py:113:        test = test[-1] # TODO: DON'T KEEP THIS FOREVER 
+./domainadapt_segmentation/helper_utils/configs.py:64:    )  # TODO: uPDATE README TO EXPLAIN CONFI OF PICKLE FILE
+./domainadapt_segmentation/helper_utils/configs.py:151:    )  # TODO: asert test is subset of train excluding rands
+Binary file ./domainadapt_segmentation/helper_utils/__pycache__/transforms.cpython-38.pyc matches
+Binary file ./domainadapt_segmentation/helper_utils/__pycache__/transforms.cpython-310.pyc matches
+./domainadapt_segmentation/helper_utils/utils.py:58:    # TODO: MAKE IT SO I CAN USE THIS IN TENSORBOARD LOGGING
+./domainadapt_segmentation/helper_utils/utils.py:68:    # TODO USE THIS IN TEST PHASE OF FINAL MODEL
+./domainadapt_segmentation/helper_utils/transforms.py:43:        # TODO make it interchangeable with the GCP one
+./domainadapt_segmentation/helper_utils/transforms.py:97:        # TODO: SEARCH FOR REASONING TO HAVE VARIABLE X,Y,Z. I guess it would pick up on extra noise from resampling volumes?
+./domainadapt_segmentation/helper_utils/transforms.py:143:    TODO:  Do not understand why default monai doesn't have this. Cary over of past
+./domainadapt_segmentation/infer.py:69:        test = test[-1] # TODO: DON'T KEEP THIS FOREVER 
+./.git/hooks/pre-commit:3:grep -rnw 'TODO' . > ./todo.txt 
