@@ -3,14 +3,14 @@ from monai.data import DataLoader
 import os
 import random
 import os
-import helper_utils.configs as help_configs
-import helper_utils.data_io as help_io
-import helper_utils.transforms as help_transforms
-import helper_utils.utils as help_utils
-from batch_iterators.train_iterators import *
-from data_factories.kits_factory import kit_factory
+from   .helper_utils import configs as help_configs
+from  .helper_utils import data_io as help_io
+from .helper_utils import transforms as help_transforms
+from .helper_utils import utils as help_utils
+from .batch_iterators.train_iterators import *
+from .data_factories.kits_factory import kit_factory
 from monai.data import DataLoader
-from models.model_factory import model_factory
+from .models.model_factory import model_factory
 from monai.losses import DiceCELoss
 import torch._dynamo
 import optuna

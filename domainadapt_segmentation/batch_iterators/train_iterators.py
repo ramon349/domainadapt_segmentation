@@ -2,7 +2,7 @@ import os
 import sys
 import torch
 import numpy as np
-import helper_utils.utils as help_utils
+from ..helper_utils import utils as help_utils
 from monai.transforms import AsDiscrete, Compose
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric

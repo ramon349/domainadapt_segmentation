@@ -153,6 +153,7 @@ def build_args():
     parser.add_argument("--lbl_key_name", required=True, type=str)
     parser.add_argument("--batch_size", required=True, type=int)
     parser.add_argument("--cache_dir", type=str, required=True)
+    parser.add_argument('--label_vals',type=json.loads,required=True)
     parser.add_argument(
         "--train_mode",
         type=str,

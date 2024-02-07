@@ -16,6 +16,7 @@ from monai.transforms import (
     RandAffined,
     FillHolesd,
     SpatialPadd,
+    LabelToMaskd,
 )
 from monai.data import NibabelReader
 import torch
@@ -115,6 +116,10 @@ def get_transform(name, conf,mode='train'):
             scale_range=scale_range,
             rotate_range=rotation_range,
         )
+    if name =='labelMask':
+        label_vals = conf['label_vals']
+        print(label_vals)
+        return LabelToMaskd(select_labels=label_vals,keys=[lbl_k],merge_channels=False)
     raise ValueError(
         f"The param name {name} does not have  a match check typo in config or update transforms.get_transform.py"
     )
