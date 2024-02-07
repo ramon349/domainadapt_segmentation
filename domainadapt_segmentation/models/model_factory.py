@@ -1,5 +1,5 @@
 from monai.networks.nets.unet import UNet
-
+from monai.networks.nets.dynunet import DynUNet 
 def model_factory(config):
     model_name = config["model"]
     num_seg_labels = config["num_seg_labels"]

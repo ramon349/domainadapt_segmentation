@@ -54,7 +54,6 @@ def _parse():
         print("  Number of pruned trials: ", len(pruned_trials))
         print("  Number of complete trials: ", len(complete_trials))
     else:
-        """
         gpus = conf['device']  
         print(gpus)
         for e in gpus: 
@@ -63,8 +62,7 @@ def _parse():
         os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
         mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True)
-        """
-        main(conf)
+        #main(conf)
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
     tensor = tensor.clone() 
@@ -95,11 +93,12 @@ def dummy_main(rank,world_size,conf):
     cache_dir = conf['cache_dir']
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
+    num_workers = conf['num_workers']
     train_dl = DataLoader(
         tr_dset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=num_workers,
         collate_fn=help_transforms.ramonPad(),
         sampler=None,
     )
@@ -107,7 +106,7 @@ def dummy_main(rank,world_size,conf):
         val_dset,
         batch_size=1,
         shuffle=True,
-        num_workers=4,
+        num_workers=num_workers,
         collate_fn=help_transforms.ramonPad(),
     )
     device = torch.device(f"cuda:{rank}")
@@ -129,8 +128,10 @@ def dummy_main(rank,world_size,conf):
         optimizer,
         total_iters=conf["epochs"],
     )  
-    max_epochs = 2 #conf['epochs']
+    max_epochs = conf['epochs']
     m_rank = dist.get_rank() 
+    best_metric =0 
+    best_metric_epoch =0 
     if m_rank ==0: 
         log_path = help_utils.figure_version(
             conf["log_dir"]
@@ -151,7 +152,9 @@ def dummy_main(rank,world_size,conf):
         model.train()
         epoch_loss = 0
         step = 0
-        for batch_data in tqdm(train_dl, total=len(train_dl)):
+        for batch_n,batch_data in enumerate(train_dl): 
+            if rank==0: 
+                print(f"{rank} is on batch: {batch_n}",end='\r')
             inputs, labels = (batch_data[img_k], batch_data[lbl_k])
             if step == 0 and epoch % 2 == 0 and m_rank==0:
                 help_utils.write_batches(
@@ -171,19 +174,47 @@ def dummy_main(rank,world_size,conf):
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
+            local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item()
             if writer: 
-                local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item()
                 writer.add_scalar(
                     "batch_f_loss",
                     local_loss,
                     global_step=global_step_count,
                 )
-            dist.barrier()
-            global_step_count += 1
+            global_step_count += 1 
         epoch_loss /= step
         lr_scheduler.step()
         if writer: 
             writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch)
+        all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
+        dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size())
+        loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) 
+        if writer: 
+            writer.add_scalar("val_loss",loss_reduc,global_step=epoch) 
+            writer.add_scalar("val_dice",dice_reduc,global_step=epoch)
+        if all_d > best_metric and rank==0:
+            best_metric = all_d
+            best_metric_epoch = epoch + 1
+            torch.save(
+                {
+                    "conf": conf,
+                    "state_dict": model.state_dict(),
+                    "epoch": epoch,
+                },
+                os.path.join(weight_path, "best_metric_model.pth"),
+            )
+            print("saved new best metric model")
+            print(
+                f"current epoch: {epoch + 1} current mean dice: {all_d:.4f}"
+                f"\nbest mean dice: {best_metric:.4f}"
+                f" at epoch: {best_metric_epoch}"
+            )
+        if rank==0 and (epoch - best_metric_epoch) > 100 and abs(best_metric - all_d) < 0.01:
+            #  we will exit training  because the model has not made large useful progres sin a reasonable amount of time
+            print(f"Killign training due to insufficient progress")
+            dist.destroy_process_group()
+            break 
+    dist.destroy_process_group()
 
 
 

@@ -11,6 +11,8 @@ from monai.inferers import sliding_window_inference
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import pdb 
+from torch.nn.parallel import DistributedDataParallel 
+import torch.distributed as dist 
 
 def train_batch(
     model, loaders, optimizer, lr_scheduler, loss_function, device="cpu", config=None
@@ -95,11 +97,10 @@ def train_batch(
             sys.exit()
 
 
-def eval_loop(model, loader, writer, epoch, dset_name, config):
+def eval_loop(model, loader, writer, epoch, device, config):
     roi_size = config["spacing_vox_dim"]
     img_k = config["img_key_name"]
     lbl_k = config["lbl_key_name"]
-    device = config["device"]
     num_seg_labels = config["num_seg_labels"]
     metric = DiceMetric(include_background=True, reduction="mean")
     model.eval()
@@ -109,15 +110,20 @@ def eval_loop(model, loader, writer, epoch, dset_name, config):
     post_pred = Compose([AsDiscrete(argmax=True, to_onehot=num_seg_labels)])
     post_label = Compose([AsDiscrete(to_onehot=num_seg_labels)])
     _step = 0 
+    rank = dist.get_rank() 
+    print('On Validation')
     with torch.no_grad():
-        for val_data in tqdm(loader, total=len(loader)):
+        for i,val_data in enumerate(loader):
+            if rank==0: 
+                print(f"Val:{i}",end="\r")
             if _step==0 and epoch==0: 
                 help_utils.write_batches(
                     writer=writer,
                     inputs=val_data[img_k].detach(),
                     labels=val_data[lbl_k].detach(),
                     epoch=epoch,
-                    dset='val'
+                    dset='val',
+                    config=config
                 )
             val_inputs, val_labels = (
                 val_data[img_k].to(device),
@@ -139,8 +145,6 @@ def eval_loop(model, loader, writer, epoch, dset_name, config):
                 loss_function(v_o, v_l) for v_o, v_l in zip(val_outputs, val_labels)
             )
             all_losses.append(loss)
-        all_l = np.array(torch.mean(torch.stack(all_losses)).cpu())
-        all_d = np.mean(dice_scores)
-        writer.add_scalar(f"test_{dset_name}_dice", all_d, global_step=epoch)
-        writer.add_scalar(f"test_{dset_name}_loss", all_l, global_step=epoch)
+        all_l = torch.mean(torch.stack(all_losses)).to(device)
+        all_d = torch.mean(torch.tensor(dice_scores)).to(device)
     return all_d, all_l

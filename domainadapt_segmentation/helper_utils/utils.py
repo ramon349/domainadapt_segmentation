@@ -58,10 +58,11 @@ def proc_batch(imgs: torch.Tensor, labels: torch.Tensor,config=None):
 
 
 def write_batches(writer: SummaryWriter, inputs, labels, epoch,dset=None,config=None):
-    # do some processing then
-    out_imgs, out_lbls = proc_batch(imgs=inputs, labels=labels,config=config)
-    writer.add_images(f"{dset}_set_img", out_imgs, global_step=epoch)
-    writer.add_images(f"{dset}_set_lbl", out_lbls, global_step=epoch)
+    if writer: 
+        # do some processing then
+        out_imgs, out_lbls = proc_batch(imgs=inputs, labels=labels,config=config)
+        writer.add_images(f"{dset}_set_img", out_imgs, global_step=epoch)
+        writer.add_images(f"{dset}_set_lbl", out_lbls, global_step=epoch)
 
 
 def show_large_slice(input_dict):
