@@ -17,6 +17,7 @@ from monai.transforms import (
     FillHolesd,
     SpatialPadd,
     LabelToMaskd,
+    SqueezeDimd,
 )
 from monai.data import NibabelReader
 import torch
@@ -88,18 +89,28 @@ def get_transform(name, conf,mode='train'):
             allow_smaller=allow_smaller,
         )
     if name == "spatial_pad":
-        vox_dim = conf["spacing_vox_dim"]
-        return SpatialPadd(keys=transform_ins, spatial_size=vox_dim)
+        vox_dim = conf["spacing_vox_dim"] 
+        if conf['2Dvs3D'] =='3D': 
+            return SpatialPadd(keys=transform_ins, spatial_size=vox_dim)
+        if conf['2Dvs3D'] =='2D': 
+            return SpatialPadd(keys=transform_ins, spatial_size=vox_dim[:2])
+        raise ValueError("The 3D or 2D configuration must be carefully adjusted")
+
     if name == "rand_shift_intensity":
         offset = conf["rand_shift_intensity_offset"]
         prob = conf["rand_shift_intensity_prob"]
         return RandShiftIntensityd(keys=[img_k], offsets=offset, prob=prob)
     if name == "rand_gauss":
         # TODO: SEARCH FOR REASONING TO HAVE VARIABLE X,Y,Z. I guess it would pick up on extra noise from resampling volumes?
-        sigma_x = conf["rand_gauss_sigma"]
-        return RandGaussianSmoothd(
-            keys=[img_k], sigma_x=sigma_x, sigma_y=sigma_x, sigma_z=sigma_x
-        )
+        sigma_x = conf["rand_gauss_sigma"]  
+        if conf['2Dvs3D']=='3D': 
+            return RandGaussianSmoothd(
+                keys=[img_k], sigma_x=sigma_x, sigma_y=sigma_x, sigma_z=sigma_x
+            ) 
+        if conf['2Dvs3D']=='2D': 
+            return RandGaussianSmoothd(
+                keys=[img_k], sigma_x=sigma_x, sigma_y=sigma_x 
+            ) 
     if name == "rand_flip":
         prob = conf["rand_flip_prob"]
         return RandFlipd(keys=transform_ins, prob=prob)
@@ -114,12 +125,15 @@ def get_transform(name, conf,mode='train'):
             mode=[img_interp, lbl_interp],
             prob=affine_prob,
             scale_range=scale_range,
-            rotate_range=rotation_range,
+            rotate_range=rotation_range,padding_mode='border'
         )
     if name =='labelMask':
         label_vals = conf['label_vals']
         print(label_vals)
         return LabelToMaskd(select_labels=label_vals,keys=[lbl_k],merge_channels=False)
+    if name=='squeezeDim': 
+        return SqueezeDimd(keys=[img_k,lbl_k],dim=-1) 
+
     raise ValueError(
         f"The param name {name} does not have  a match check typo in config or update transforms.get_transform.py"
     )

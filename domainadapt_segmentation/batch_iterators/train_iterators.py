@@ -10,7 +10,7 @@ from monai.data import decollate_batch
 from monai.inferers import sliding_window_inference
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
+import pdb 
 
 def train_batch(
     model, loaders, optimizer, lr_scheduler, loss_function, device="cpu", config=None
@@ -49,7 +49,8 @@ def train_batch(
                     inputs=inputs.detach(),
                     labels=labels.detach(),
                     epoch=epoch,
-                    dset='train'
+                    dset='train',
+                    config=config
                 )
             optimizer.zero_grad()
             step += 1

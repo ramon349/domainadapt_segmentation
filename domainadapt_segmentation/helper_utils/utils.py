@@ -32,8 +32,7 @@ def make_8bit(arr: torch.Tensor):
     arr = arr + arr.min().abs()  #  make 0 the min  value
     return ((torch.maximum(arr, torch.tensor(0)) / arr.max()) * 255).to(torch.uint8)
 
-
-def proc_batch(imgs: torch.Tensor, labels: torch.Tensor):
+def _proc3dbatch(imgs: torch.Tensor, labels: torch.Tensor): 
     img_l = list()
     lbl_l = list()
     for e in range(imgs.shape[0]):  # iterate trhough batch
@@ -45,11 +44,22 @@ def proc_batch(imgs: torch.Tensor, labels: torch.Tensor):
         img_l.append(img_s)
         lbl_l.append(lbl_s)
     return torch.cat(img_l, axis=0), torch.cat(lbl_l, axis=0)
+def _proc2dbatch(imgs:torch.Tensor,labels:torch.Tensor): 
+    #TODO: i may need to do some other augmentations in the future. hence 
+    return  imgs,  labels
 
 
-def write_batches(writer: SummaryWriter, inputs, labels, epoch,dset=None):
+def proc_batch(imgs: torch.Tensor, labels: torch.Tensor,config=None):
+    if config['2Dvs3D']=='3D': 
+        return _proc3dbatch(imgs,labels)
+    if config['2Dvs3D']=='2D':
+        return imgs,labels
+
+
+
+def write_batches(writer: SummaryWriter, inputs, labels, epoch,dset=None,config=None):
     # do some processing then
-    out_imgs, out_lbls = proc_batch(imgs=inputs, labels=labels)
+    out_imgs, out_lbls = proc_batch(imgs=inputs, labels=labels,config=config)
     writer.add_images(f"{dset}_set_img", out_imgs, global_step=epoch)
     writer.add_images(f"{dset}_set_lbl", out_lbls, global_step=epoch)
 

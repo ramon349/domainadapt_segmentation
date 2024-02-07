@@ -81,7 +81,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["unet"],
+        choices=["2Dunet","3Dunet"],
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")
@@ -160,7 +160,8 @@ def build_args():
         required=True,
         choices=["vanilla", "debias", "dinsdale","mixed"],
     )
-    parser.add_argument("--log_dir", type=str, required=True)
+    parser.add_argument("--log_dir", type=str, required=True) 
+    parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)
