@@ -54,6 +54,7 @@ def _parse():
         print("  Number of pruned trials: ", len(pruned_trials))
         print("  Number of complete trials: ", len(complete_trials))
     else:
+        """
         gpus = conf['device']  
         print(gpus)
         for e in gpus: 
@@ -62,16 +63,22 @@ def _parse():
         os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
         mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True)
+        """
+        main(conf)
 
-        #main(conf)
-
+def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
+    tensor = tensor.clone() 
+    dist.all_reduce(tensor,op) 
+    tensor.div(world_size) 
+    return tensor
 def dummy_main(rank,world_size,conf):
     print(f"Hello I am procees {rank} out of {world_size}")
     print(f"Process {rank} has {torch.cuda.device_count()} gpus avaialble") 
     seed = conf['seed']
-    setup_repro(seed) 
+    setup_repro(seed)
     dist.init_process_group(backend='nccl',rank=rank,world_size=world_size,init_method="env://") 
     #here we set up the partitioning of the training data across all the workers 
+    ##SETUP ALL THE DATASET RELATED ITEMS 
     train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries  
     # use short circuitting to check if dev is  a field
     if "dev" in conf.keys() and conf["dev"] == True:
@@ -81,11 +88,13 @@ def dummy_main(rank,world_size,conf):
         train = random.sample(train, 50)
         val = random.sample(val, 30)
     train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
-    data_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=True,even_divisible=True) [dist.get_rank()] # this will create a dataset  for each partion 
-    dset = kit_factory('basic')
+    tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=True,even_divisible=True) [dist.get_rank()] # this will create a dataset  for each partion 
+    val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=True,even_divisible=True)[dist.get_rank()] 
+    dset = kit_factory('cached')
     batch_size = conf['batch_size']
-    tr_dset = dset(train,transform= train_transform)
-    #SmartCacheDataset(data=data_part,replace_rate=0.2,cache_num=15,num_init_workers=2,num_replace_workers=2,)  
+    cache_dir = conf['cache_dir']
+    tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
+    val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
     train_dl = DataLoader(
         tr_dset,
         batch_size=batch_size,
@@ -94,8 +103,13 @@ def dummy_main(rank,world_size,conf):
         collate_fn=help_transforms.ramonPad(),
         sampler=None,
     )
-
-    #TODO understand this does what you htink it does 
+    val_dl = DataLoader(
+        val_dset,
+        batch_size=1,
+        shuffle=True,
+        num_workers=4,
+        collate_fn=help_transforms.ramonPad(),
+    )
     device = torch.device(f"cuda:{rank}")
     torch.cuda.set_device(device) 
     #load the model 
@@ -105,12 +119,7 @@ def dummy_main(rank,world_size,conf):
     )
     model = model.to(torch.float32).to(device)
     model = DistributedDataParallel(model,device_ids=[device])
-
-
-    print(f"Len train is {len(train)}")
-    print(f"Len val is {len(val)}")
-    print(f"Len test is {len(test)}")
-    print(conf)
+    #cofigs regarding model params 
     lr = conf["learn_rate"]
     momentum = conf["momentum"]
     batch_size = conf["batch_size"]
@@ -163,9 +172,10 @@ def dummy_main(rank,world_size,conf):
             optimizer.step()
             epoch_loss += loss.item()
             if writer: 
+                local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item()
                 writer.add_scalar(
                     "batch_f_loss",
-                    loss.cpu().detach().item(),
+                    local_loss,
                     global_step=global_step_count,
                 )
             dist.barrier()
