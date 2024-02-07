@@ -81,7 +81,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["2Dunet","3Dunet"],
+        choices=["2DUnet","3DUnet"],
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")
@@ -114,7 +114,7 @@ def build_args():
         help="This is the orientation of the MRI/CT. Careful when selecting",
     )
     parser.add_argument(
-        "--device", type=str, required=True, default="cuda:0", help="GPU parameter"
+        "--device", type=json.loads, required=True, default=["cuda:0"], help="GPU parameter"
     )
     parser.add_argument(
         "--run_param_search",
@@ -162,6 +162,8 @@ def build_args():
     )
     parser.add_argument("--log_dir", type=str, required=True) 
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
+    parser.add_argument('--local_rank',type=int,required=True)
+    parser.add_argument('--seed',type=int,default=349)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)

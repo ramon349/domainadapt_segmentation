@@ -3,7 +3,7 @@ from monai.networks.nets.unet import UNet
 def model_factory(config):
     model_name = config["model"]
     num_seg_labels = config["num_seg_labels"]
-    if model_name == "2Dunet":
+    if model_name == "2DUnet":
         net = UNet(
             spatial_dims=2,
             in_channels=1,
@@ -14,7 +14,7 @@ def model_factory(config):
             act="LEAKYRELU",
         )
         return net
-    if model_name =='3Dunet':
+    if model_name =='3DUnet':
         net = UNet(
             spatial_dims=3,
             in_channels=1,
@@ -24,3 +24,4 @@ def model_factory(config):
             num_res_units=2,
             act="LEAKYRELU",
         )
+        return net

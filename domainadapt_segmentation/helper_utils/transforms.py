@@ -125,8 +125,8 @@ def get_transform(name, conf,mode='train'):
             mode=[img_interp, lbl_interp],
             prob=affine_prob,
             scale_range=scale_range,
-            rotate_range=rotation_range,padding_mode='border'
-        )
+            rotate_range=rotation_range,
+        ) #TODO: do i modify the border of the trianing of my model?  default was reflection. but should i use border padding instead?
     if name =='labelMask':
         label_vals = conf['label_vals']
         print(label_vals)

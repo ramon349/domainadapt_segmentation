@@ -9,12 +9,19 @@ from .helper_utils import transforms as help_transforms
 from .helper_utils import utils as help_utils
 from .batch_iterators.train_iterators import *
 from .data_factories.kits_factory import kit_factory
-from monai.data import DataLoader
+from monai.data import DataLoader,SmartCacheDataset,partition_dataset
 from .models.model_factory import model_factory
 from monai.losses import DiceCELoss
 import torch._dynamo
+import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.optim as optim
+import os
+from torch.nn.parallel import DistributedDataParallel as DDP
 import optuna
-
+import os 
+import torch.distributed as dist 
+from torch.nn.parallel import DistributedDataParallel 
 torch._dynamo.config.suppress_errors = True
 torch.multiprocessing.set_sharing_strategy("file_system")
 
@@ -47,16 +54,25 @@ def _parse():
         print("  Number of pruned trials: ", len(pruned_trials))
         print("  Number of complete trials: ", len(complete_trials))
     else:
-        main(conf)
+        gpus = conf['device']  
+        print(gpus)
+        for e in gpus: 
+            print(e.split(':'))
+        device_nums = [e.split(':')[1] for e in gpus]
+        os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
+        world_size = len(gpus)
+        mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True)
 
+        #main(conf)
 
-def main(conf_in, trial=None):
-    if trial:
-        conf = optuna_gen(copy(conf_in), trial)
-    else:
-        conf = conf_in
-    dset = kit_factory("cached")
-    train, val, test = help_io.load_data(conf["data_path"])
+def dummy_main(rank,world_size,conf):
+    print(f"Hello I am procees {rank} out of {world_size}")
+    print(f"Process {rank} has {torch.cuda.device_count()} gpus avaialble") 
+    seed = conf['seed']
+    setup_repro(seed) 
+    dist.init_process_group(backend='nccl',rank=rank,world_size=world_size,init_method="env://") 
+    #here we set up the partitioning of the training data across all the workers 
+    train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries  
     # use short circuitting to check if dev is  a field
     if "dev" in conf.keys() and conf["dev"] == True:
         print(
@@ -64,15 +80,118 @@ def main(conf_in, trial=None):
         )
         train = random.sample(train, 50)
         val = random.sample(val, 30)
+    train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
+    data_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=True,even_divisible=True) [dist.get_rank()] # this will create a dataset  for each partion 
+    dset = kit_factory('basic')
+    batch_size = conf['batch_size']
+    tr_dset = dset(train,transform= train_transform)
+    #SmartCacheDataset(data=data_part,replace_rate=0.2,cache_num=15,num_init_workers=2,num_replace_workers=2,)  
+    train_dl = DataLoader(
+        tr_dset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        collate_fn=help_transforms.ramonPad(),
+        sampler=None,
+    )
+
+    #TODO understand this does what you htink it does 
+    device = torch.device(f"cuda:{rank}")
+    torch.cuda.set_device(device) 
+    #load the model 
+    model = model_factory(config=conf)
+    loss_function = DiceCELoss(
+        include_background=True, reduction="mean", to_onehot_y=True, softmax=True
+    )
+    model = model.to(torch.float32).to(device)
+    model = DistributedDataParallel(model,device_ids=[device])
+
+
     print(f"Len train is {len(train)}")
     print(f"Len val is {len(val)}")
     print(f"Len test is {len(test)}")
     print(conf)
     lr = conf["learn_rate"]
     momentum = conf["momentum"]
-    train_transform, val_transform = help_transforms.gen_transforms(conf)
     batch_size = conf["batch_size"]
     cache_dir = conf["cache_dir"]
+    optimizer = torch.optim.SGD(model.parameters(), lr, momentum=momentum)
+    lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(
+        optimizer,
+        total_iters=conf["epochs"],
+    )  
+    max_epochs = 2 #conf['epochs']
+    m_rank = dist.get_rank() 
+    if m_rank ==0: 
+        log_path = help_utils.figure_version(
+            conf["log_dir"]
+        )  # TODO think about how you could perhaps continue training
+        weight_path = conf["log_dir"].replace("model_logs", "model_checkpoints")
+        if not os.path.isdir(weight_path):
+            os.makedirs(weight_path)
+        if not os.path.isdir(log_path):
+            os.makedirs(log_path)
+        writer =  SummaryWriter(log_dir=log_path)
+    else: 
+        writer = None  #TODO make sure code works with NOne writeter
+    #tr_dset.start()  #TODO this is only if i use the smart cache dataset 
+    img_k = conf["img_key_name"]
+    lbl_k = conf["lbl_key_name"]
+    global_step_count =0 
+    for epoch in range (max_epochs): 
+        model.train()
+        epoch_loss = 0
+        step = 0
+        for batch_data in tqdm(train_dl, total=len(train_dl)):
+            inputs, labels = (batch_data[img_k], batch_data[lbl_k])
+            if step == 0 and epoch % 2 == 0 and m_rank==0:
+                help_utils.write_batches(
+                    writer=writer,
+                    inputs=inputs.detach(),
+                    labels=labels.detach(),
+                    epoch=epoch,
+                    dset='train',
+                    config=conf
+                )
+            optimizer.zero_grad()
+            step += 1
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            loss = loss_function(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+            if writer: 
+                writer.add_scalar(
+                    "batch_f_loss",
+                    loss.cpu().detach().item(),
+                    global_step=global_step_count,
+                )
+            dist.barrier()
+            global_step_count += 1
+        epoch_loss /= step
+        lr_scheduler.step()
+        if writer: 
+            writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch)
+
+
+
+
+def setup_repro(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def main(conf_in, trial=None):
+    if trial:
+        conf = optuna_gen(copy(conf_in), trial)
+    else:
+        conf = conf_in
+    rank = conf_in['local_rank']
+    seed = conf_in['seed']
     os.makedirs(cache_dir, exist_ok=True)
     train_ds = dset(train, transform=train_transform, cache_dir=cache_dir)
     val_ds = dset(val, transform=val_transform, cache_dir=cache_dir)
@@ -136,9 +255,11 @@ def main(conf_in, trial=None):
             loss_function,
             device=DEVICE,
             config=conf,
-        )
+        ) 
     #TODO: ADD TESTING OF THE BEST MODEL 
 
 
 if __name__ == "__main__":
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "29500"
     _parse()
