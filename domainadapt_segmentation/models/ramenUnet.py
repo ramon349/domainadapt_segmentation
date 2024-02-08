@@ -22,7 +22,6 @@ class GradReverse(Function):
 
 def grad_reverse(x):
     return GradReverse.apply(x)
-
 class linearModel(nn.Module):
     def __init__(self,in_feats) -> None:
         super().__init__() 
@@ -31,6 +30,7 @@ class linearModel(nn.Module):
         x = x.view(x.size(0),-1)
         print(x.shape)
         return self.model(x)
+#TODO: can i adapt so a regular unet does this lol no 
 class DynUnetSingleBias(DynUNet):
     def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, kernel_size: Sequence[Union[Sequence[int], int]], strides: Sequence[Union[Sequence[int], int]], upsample_kernel_size: Sequence[Union[Sequence[int], int]], filters: Optional[Sequence[int]] = None, dropout: Optional[Union[Tuple, str, float]] = None, norm_name: Union[Tuple, str] = 'INSTANCE' ,act_name: Union[Tuple, str] = 'LEAKYRELU', deep_supervision: bool = False, deep_supr_num: int = 1, res_block: bool = False, trans_bias: bool = False,config=None):
         super().__init__(spatial_dims, in_channels, out_channels, kernel_size, strides, upsample_kernel_size, filters, dropout, norm_name, act_name, deep_supervision, deep_supr_num, res_block, trans_bias)
