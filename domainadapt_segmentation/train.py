@@ -231,7 +231,6 @@ def main(conf_in, trial=None):
         conf = optuna_gen(copy(conf_in), trial)
     else:
         conf = conf_in
-    rank = conf_in['local_rank']
     seed = conf_in['seed']
     os.makedirs(cache_dir, exist_ok=True)
     train_ds = dset(train, transform=train_transform, cache_dir=cache_dir)

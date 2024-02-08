@@ -162,7 +162,6 @@ def build_args():
     )
     parser.add_argument("--log_dir", type=str, required=True) 
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
-    parser.add_argument('--local_rank',type=int,required=True)
     parser.add_argument('--seed',type=int,default=349)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
