@@ -8,7 +8,7 @@ import torch.nn.functional as F
 ########################################################################################################################
 
 from collections import OrderedDict
-
+import pdb 
 import torch
 import torch.nn as nn
 
@@ -139,7 +139,7 @@ class domain_predictor(nn.Module):
         self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.decoder5 = domain_predictor._projector_block(features, 1, name="projectorblock")
         # Projector block to reduce features
-        self.lin1 = nn.Linear(1024, 96)
+        self.lin1 = nn.Linear(512, 96)
         self.relu1 = nn.ReLU(True)
 
 
@@ -161,14 +161,13 @@ class domain_predictor(nn.Module):
         dec1 = self.decoder1(x1)
         dec2 = self.decoder2(self.pool1(dec1))
         dec3 = self.decoder3(self.pool2(dec2))
-        dec4 = self.decoder4(self.pool3(dec3))
-        dec4 = dec4.view(-1, 1024)
+        dec4  = self.decoder4(self.pool3(dec3)) 
+        dec4 = torch.flatten(dec4,1,-1)
         lin1 = self.relu1(self.lin1(dec4))
 
         dec5 = self.decoder5(x2)
-        dec5 = dec5.view(-1, 100)
+        dec5 = torch.flatten(dec5,1,-1) 
         lin2 = self.relu2(self.lin2(dec5))
-
         linear = torch.cat((lin1, lin2), dim=1)
 
         domain_pred = self.domain(linear)
@@ -216,10 +215,10 @@ class domain_predictor(nn.Module):
             )
         )
 
-class RamenDinsdale(UNet): 
-    def __init__(self, in_channels=1, init_features=4):
+class RamenDinsdale2D(UNet): 
+    def __init__(self, in_channels=1, init_features=2):
         super().__init__(in_channels, init_features) 
-        self.discrim = domain_predictor(n_domains=2,init_features=4)
+        self.discrim = domain_predictor(n_domains=2,init_features=2)
     def forward(self,x): 
         enc1 = self.encoder1(x)
         enc2 = self.encoder2(self.pool1(enc1))
@@ -240,5 +239,5 @@ class RamenDinsdale(UNet):
         dec1 = torch.cat((dec1, enc1), dim=1)
         dec1 = self.decoder1(dec1)
         phase_preds = self.discrim([dec1,bottleneck])
-        return [dec1, bottleneck]
+        return [dec1, phase_preds]
 

@@ -22,6 +22,7 @@ import optuna
 import os 
 import torch.distributed as dist 
 from torch.nn.parallel import DistributedDataParallel 
+from domainadapt_segmentation.helper_utils.utils import confusion_loss
 torch._dynamo.config.suppress_errors = True
 torch.multiprocessing.set_sharing_strategy("file_system")
 
@@ -29,6 +30,46 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 def optuna_gen(conf_in, trial):
     pass
 
+#selecting optimizer 
+#TODO: perhpas this should go elsewhere 
+def  get_params_list(model,name_select): 
+    param_list = list() 
+    if name_select=='all':
+        return list(model.parameters() )
+    if name_select=='domain': 
+        param_list = list()
+        for n,e in model.named_parameters():
+            if n.startswith('discrim'):
+                param_list.append(e)
+        return param_list
+    if name_select=='unet': 
+        for n,e in model.named_parameters(): 
+            if not n.startswith('discrim'):
+                param_list.append(e)
+        return param_list
+def build_optimizers(model,conf=None): 
+    lr = conf["learn_rate"]
+    momentum = conf["momentum"]
+    if conf['train_mode']=='vanilla': 
+        optis = dict() 
+        optis['task'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+    if conf['train_mode']=='dinsdale':
+        optim_seg = optim.Adam(get_params_list(model,'unet'),lr=0.1)
+        opti_dm = optim.Adam(get_params_list(model,'domain'),lr=0.1) 
+        opti_conf = optim.Adam(get_params_list(model,'all'),lr=0.1)
+        optis = {'task':optim_seg,'domain_optim':opti_dm,'confuse_opti':opti_conf}
+    return optis  
+
+def build_criterions(conf=None): 
+    if conf['train_mode']=='vanilla': 
+        criterions = dict() 
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+    if conf['train_mode']=='dinsdale': 
+        criterions = dict() 
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+        criterions['domain'] = torch.nn.CrossEntropyLoss()
+        criterions['conf'] = confusion_loss()
+    return criterions
 
 def _parse():
     conf = help_configs.get_params()
@@ -119,13 +160,12 @@ def dummy_main(rank,world_size,conf):
     model = model.to(torch.float32).to(device)
     model = DistributedDataParallel(model,device_ids=[device])
     #cofigs regarding model params 
-    lr = conf["learn_rate"]
-    momentum = conf["momentum"]
     batch_size = conf["batch_size"]
     cache_dir = conf["cache_dir"]
-    optimizer = torch.optim.SGD(model.parameters(), lr, momentum=momentum)
+    optis = build_optimizers(model,conf=conf) 
+    criterions = build_criterions(conf) 
     lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(
-        optimizer,
+        optis['task'],
         total_iters=conf["epochs"],
     )  
     max_epochs = conf['epochs']
@@ -144,48 +184,17 @@ def dummy_main(rank,world_size,conf):
         writer =  SummaryWriter(log_dir=log_path)
     else: 
         writer = None  #TODO make sure code works with NOne writeter
-    #tr_dset.start()  #TODO this is only if i use the smart cache dataset 
-    img_k = conf["img_key_name"]
-    lbl_k = conf["lbl_key_name"]
-    global_step_count =0 
+    global_step_count =0  
+
     for epoch in range (max_epochs): 
-        model.train()
-        epoch_loss = 0
-        step = 0
-        for batch_n,batch_data in enumerate(train_dl): 
-            if rank==0: 
-                print(f"{rank} is on batch: {batch_n}",end='\r')
-            inputs, labels = (batch_data[img_k], batch_data[lbl_k])
-            if step == 0 and epoch % 2 == 0 and m_rank==0:
-                help_utils.write_batches(
-                    writer=writer,
-                    inputs=inputs.detach(),
-                    labels=labels.detach(),
-                    epoch=epoch,
-                    dset='train',
-                    config=conf
-                )
-            optimizer.zero_grad()
-            step += 1
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = model(inputs)
-            loss = loss_function(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-            local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item()
-            if writer: 
-                writer.add_scalar(
-                    "batch_f_loss",
-                    local_loss,
-                    global_step=global_step_count,
-                )
-            global_step_count += 1 
-        epoch_loss /= step
+        epoch_loss, global_step_count = train_basic(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
         lr_scheduler.step()
+        epoch_loss = reduce_tensors(epoch_loss,world_size=dist.get_world_size()).item()
         if writer: 
-            writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch)
+            writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch) 
+            
         all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
         dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size())
         loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) 

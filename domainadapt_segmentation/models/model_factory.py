@@ -1,5 +1,8 @@
 from monai.networks.nets.unet import UNet
 from monai.networks.nets.dynunet import DynUNet 
+from .dinsdale import RamenDinsdale2D
+
+
 def model_factory(config):
     model_name = config["model"]
     num_seg_labels = config["num_seg_labels"]
@@ -24,4 +27,7 @@ def model_factory(config):
             num_res_units=2,
             act="LEAKYRELU",
         )
+        return net
+    if model_name=='2DDinsdale':
+        net = RamenDinsdale2D(1,2)
         return net

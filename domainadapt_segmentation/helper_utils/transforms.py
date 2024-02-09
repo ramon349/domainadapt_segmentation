@@ -1,23 +1,21 @@
 from monai.transforms import (
     Compose,
     LoadImaged,
-    MapTransform,
-    NormalizeIntensityd,
     RandFlipd,
     EnsureChannelFirstd,
     RandCropByPosNegLabeld,
     Spacingd,
-    RandScaleIntensityd,
     RandShiftIntensityd,
     RandGaussianSmoothd,
     Orientationd,
     ScaleIntensityRanged,
     CropForegroundd,
     RandAffined,
-    FillHolesd,
     SpatialPadd,
     LabelToMaskd,
     SqueezeDimd,
+    Resized,
+    SpatialPad
 )
 from monai.data import NibabelReader
 import torch
@@ -81,19 +79,25 @@ def get_transform(name, conf,mode='train'):
         assert ps_samples < 1
         return RandCropByPosNegLabeld(
             keys=transform_ins,
-            spatial_size=vox_dim,
+            spatial_size=[-1,-1,1],
             num_samples=num_samples,
             label_key=lbl_k,
             pos=ps_samples,
             neg=neg_samples,
             allow_smaller=allow_smaller,
         )
-    if name == "spatial_pad":
+    if name == "spatial_pad_l":
         vox_dim = conf["spacing_vox_dim"] 
         if conf['2Dvs3D'] =='3D': 
             return SpatialPadd(keys=transform_ins, spatial_size=vox_dim)
         if conf['2Dvs3D'] =='2D': 
             return SpatialPadd(keys=transform_ins, spatial_size=vox_dim[:2])
+        raise ValueError("The 3D or 2D configuration must be carefully adjusted")
+    if name == "spatial_pad_f":
+        vox_dim = conf["spacing_vox_dim"]  
+        if vox_dim[-1]== 1: 
+            vox_dim[-1]= -1 
+        return SpatialPadd(keys=transform_ins, spatial_size=vox_dim)
         raise ValueError("The 3D or 2D configuration must be carefully adjusted")
 
     if name == "rand_shift_intensity":
@@ -133,7 +137,9 @@ def get_transform(name, conf,mode='train'):
         return LabelToMaskd(select_labels=label_vals,keys=[lbl_k],merge_channels=False)
     if name=='squeezeDim': 
         return SqueezeDimd(keys=[img_k,lbl_k],dim=-1) 
-
+    if name=='resize': 
+        resize_size= conf['resize_size']
+        return Resized(keys=[img_k,lbl_k],mode=['trilinear ','nearest'],spatial_size=resize_size)
     raise ValueError(
         f"The param name {name} does not have  a match check typo in config or update transforms.get_transform.py"
     )
