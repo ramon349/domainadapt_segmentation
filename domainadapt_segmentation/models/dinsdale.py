@@ -46,7 +46,11 @@ class UNet(nn.Module):
         )
         self.decoder1 = UNet._half_block(features * 2, features, name="dec1")
 
-    def forward(self, x):
+    def forward(self, x,slide_window_compress=False): 
+        if (not self.training )and slide_window_compress: 
+            #this is only used in inference when using 
+            x = x.squeeze(-1) 
+
         enc1 = self.encoder1(x)
         enc2 = self.encoder2(self.pool1(enc1))
         enc3 = self.encoder3(self.pool2(enc2))
@@ -65,8 +69,10 @@ class UNet(nn.Module):
         dec2 = self.decoder2(dec2)
         dec1 = self.upconv1(dec2)
         dec1 = torch.cat((dec1, enc1), dim=1)
-        dec1 = self.decoder1(dec1)
-        return [dec1, bottleneck]
+        dec1 = self.decoder1(dec1) 
+        if (not self.training )and slide_window_compress: 
+            dec1 = dec1.unsqueeze(-1)
+        return  dec1
 
     @staticmethod
     def _block(in_channels, features, name):

@@ -102,7 +102,7 @@ def _parse():
         device_nums = [e.split(':')[1] for e in gpus]
         os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
-        mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True)
+        mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True,)
         #main(conf)
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 

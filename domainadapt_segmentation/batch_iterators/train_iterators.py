@@ -59,7 +59,6 @@ def train_batch(
                     labels=labels.detach(),
                     epoch=epoch,
                     dset='train',
-                    config=config
                 )
             optimizer.zero_grad()
             step += 1
@@ -130,18 +129,15 @@ def eval_loop(model, loader, writer, epoch, device, config):
                     labels=val_data[lbl_k].detach(),
                     epoch=epoch,
                     dset='val',
-                    config=config
-                )
+                    config=config, 
+                    is_eval=True
+                ) 
+
             val_inputs, val_labels = (
                 val_data[img_k].to(device),
                 val_data[lbl_k].to(device),
             )
-            val_outputs = sliding_window_inference(
-                inputs=val_inputs,
-                roi_size=roi_size,
-                sw_batch_size=1,
-                predictor=model,
-            )
+            val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=(128,128,1),sw_batch_size=16,predictor=model,slide_window_compress=True,sw_device=device)
             val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
             val_labels = [post_label(i) for i in decollate_batch(val_labels)]
             metric(y_pred=val_outputs, y=val_labels)
@@ -164,9 +160,9 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
     rank = dist.get_rank() 
     step= 0  
     device = torch.device(f"cuda:{rank}")
+    epoch_loss = 0  
     for batch_n,batch_data in enumerate(train_dl): 
-        if rank==0: 
-            print(f"{rank} is on batch: {batch_n}",end='\r') 
+        print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
         inputs, labels = (batch_data[img_k], batch_data[lbl_k])
         if step == 0 and epoch % 2 == 0 and rank==0:
             help_utils.write_batches(
@@ -196,7 +192,8 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
                 global_step=global_step_count,
             )
         global_step_count += 1
-        epoch_loss /= step
+        epoch_loss /= step 
+        epoch_loss =  epoch_loss.to(device)
     return epoch_loss,global_step_count
          
 

@@ -1,13 +1,12 @@
-from monai.networks.nets.unet import UNet
 from monai.networks.nets.dynunet import DynUNet 
 from .dinsdale import RamenDinsdale2D
-
+from .dinsdale import UNet as Dinsdale2DUnet
 
 def model_factory(config):
     model_name = config["model"]
     num_seg_labels = config["num_seg_labels"]
     if model_name == "2DUnet":
-        net = UNet(
+        net = DynUNet(
             spatial_dims=2,
             in_channels=1,
             out_channels=num_seg_labels,
@@ -18,7 +17,7 @@ def model_factory(config):
         )
         return net
     if model_name =='3DUnet':
-        net = UNet(
+        net = DynUNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=num_seg_labels,
@@ -28,6 +27,9 @@ def model_factory(config):
             act="LEAKYRELU",
         )
         return net
-    if model_name=='2DDinsdale':
+    if model_name=='2DDinsdaleUnet':
+        net = Dinsdale2DUnet(1,2)
+        return net
+    if model_name=='2DRamenDinsdale':
         net = RamenDinsdale2D(1,2)
         return net

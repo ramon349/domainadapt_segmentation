@@ -81,7 +81,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["2DUnet","3DUnet"],
+        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale"],
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")
@@ -163,6 +163,7 @@ def build_args():
     parser.add_argument("--log_dir", type=str, required=True) 
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
     parser.add_argument('--seed',type=int,default=349)
+    parser.add_argument("--resize_size",type=json.loads,required=True)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)
