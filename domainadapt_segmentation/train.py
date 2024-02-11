@@ -1,5 +1,4 @@
 import torch
-from monai.data import DataLoader
 import os
 import random
 import os
@@ -23,9 +22,6 @@ import os
 import torch.distributed as dist 
 from torch.nn.parallel import DistributedDataParallel 
 from domainadapt_segmentation.helper_utils.utils import confusion_loss
-torch._dynamo.config.suppress_errors = True
-torch.multiprocessing.set_sharing_strategy("file_system")
-
 
 def optuna_gen(conf_in, trial):
     pass
@@ -102,6 +98,7 @@ def _parse():
         device_nums = [e.split(':')[1] for e in gpus]
         os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
+        #main(conf,trial=None)
         mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True,)
         #main(conf)
 
@@ -124,11 +121,11 @@ def dummy_main(rank,world_size,conf):
         print(
             "we are outputting to devset we are therefore using a smaller train sample for dev"
         )
-        train = random.sample(train, 50)
+        train = random.sample(train, 30)
         val = random.sample(val, 30)
     train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
-    tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=True,even_divisible=True) [dist.get_rank()] # this will create a dataset  for each partion 
-    val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=True,even_divisible=True)[dist.get_rank()] 
+    tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False) [dist.get_rank()] # this will create a dataset  for each partion 
+    val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False)[dist.get_rank()] 
     dset = kit_factory('cached')
     batch_size = conf['batch_size']
     cache_dir = conf['cache_dir']
@@ -146,7 +143,7 @@ def dummy_main(rank,world_size,conf):
     val_dl = DataLoader(
         val_dset,
         batch_size=1,
-        shuffle=True,
+        shuffle=False,
         num_workers=num_workers,
         collate_fn=help_transforms.ramonPad(),
     )
@@ -241,7 +238,14 @@ def main(conf_in, trial=None):
     else:
         conf = conf_in
     seed = conf_in['seed']
+    cache_dir = conf_in['cache_dir']
+    dset = kit_factory('cached')
+    batch_size = conf['batch_size']
+    lr = conf['learn_rate'] 
+    mommentum = conf['momentum']
     os.makedirs(cache_dir, exist_ok=True)
+    train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries  
+    train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
     train_ds = dset(train, transform=train_transform, cache_dir=cache_dir)
     val_ds = dset(val, transform=val_transform, cache_dir=cache_dir)
     test_ds = dset(test, transform=val_transform, cache_dir=cache_dir)
@@ -275,7 +279,7 @@ def main(conf_in, trial=None):
         collate_fn=help_transforms.ramonPad(),
     )
     loaders = (train_loader, val_loader, test_loader)
-    DEVICE = torch.device(conf["device"])
+    DEVICE = torch.device('cuda')
     model = model_factory(config=conf)
     if "pretrained" in conf.keys():
         # TODO add support for continuing training by providing optinal path to checkpoint
@@ -291,7 +295,7 @@ def main(conf_in, trial=None):
     )
     if conf["train_mode"] == "vanilla" or conf['train_mode']=='mixed':
         # lr should be 0.01 for these experiments
-        optimizer = torch.optim.SGD(model.parameters(), lr, momentum=momentum)
+        optimizer = torch.optim.SGD(model.parameters(), lr, momentum=mommentum)
         lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(
             optimizer,
             total_iters=conf["epochs"],

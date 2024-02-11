@@ -59,6 +59,7 @@ def train_batch(
                     labels=labels.detach(),
                     epoch=epoch,
                     dset='train',
+                    config=conf
                 )
             optimizer.zero_grad()
             step += 1
@@ -194,6 +195,7 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
         global_step_count += 1
         epoch_loss /= step 
         epoch_loss =  epoch_loss.to(device)
+        print(f" I am rank {rank} i have completed {global_step_count}")
     return epoch_loss,global_step_count
          
 
