@@ -59,10 +59,10 @@ def build_optimizers(model,conf=None):
 def build_criterions(conf=None): 
     if conf['train_mode']=='vanilla': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=False,softmax=False)
     if conf['train_mode']=='dinsdale': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=False,softmax=False)
         criterions['domain'] = torch.nn.CrossEntropyLoss()
         criterions['conf'] = confusion_loss()
     return criterions
@@ -92,14 +92,15 @@ def _parse():
         print("  Number of complete trials: ", len(complete_trials))
     else:
         gpus = conf['device']  
-        print(gpus)
         for e in gpus: 
             print(e.split(':'))
         device_nums = [e.split(':')[1] for e in gpus]
         os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
-        #main(conf,trial=None)
-        mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True,)
+        if world_size==1: 
+            dummy_main(0,1,conf) 
+        else:
+            mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True,)
         #main(conf)
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
@@ -112,7 +113,11 @@ def dummy_main(rank,world_size,conf):
     print(f"Process {rank} has {torch.cuda.device_count()} gpus avaialble") 
     seed = conf['seed']
     setup_repro(seed)
-    dist.init_process_group(backend='nccl',rank=rank,world_size=world_size,init_method="env://") 
+    if world_size >=2:
+        dist.init_process_group(backend='nccl',rank=rank,world_size=world_size,init_method="env://") 
+        m_rank = dist.get_rank() 
+    else: 
+        m_rank = 0 
     #here we set up the partitioning of the training data across all the workers 
     ##SETUP ALL THE DATASET RELATED ITEMS 
     train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries  
@@ -124,8 +129,12 @@ def dummy_main(rank,world_size,conf):
         train = random.sample(train, 30)
         val = random.sample(val, 30)
     train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
-    tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False) [dist.get_rank()] # this will create a dataset  for each partion 
-    val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False)[dist.get_rank()] 
+    if world_size >=2: 
+        tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False) [dist.get_rank()] # this will create a dataset  for each partion 
+        val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False)[dist.get_rank()] 
+    else: 
+        tr_part  = train 
+        val_part = val  
     dset = kit_factory('cached')
     batch_size = conf['batch_size']
     cache_dir = conf['cache_dir']
@@ -148,14 +157,15 @@ def dummy_main(rank,world_size,conf):
         collate_fn=help_transforms.ramonPad(),
     )
     device = torch.device(f"cuda:{rank}")
-    torch.cuda.set_device(device) 
+    #torch.cuda.set_device(device) 
     #load the model 
     model = model_factory(config=conf)
     loss_function = DiceCELoss(
         include_background=True, reduction="mean", to_onehot_y=True, softmax=True
     )
     model = model.to(torch.float32).to(device)
-    model = DistributedDataParallel(model,device_ids=[device])
+    if world_size >=2: 
+        model = DistributedDataParallel(model,device_ids=[device])
     #cofigs regarding model params 
     batch_size = conf["batch_size"]
     cache_dir = conf["cache_dir"]
@@ -166,7 +176,6 @@ def dummy_main(rank,world_size,conf):
         total_iters=conf["epochs"],
     )  
     max_epochs = conf['epochs']
-    m_rank = dist.get_rank() 
     best_metric =0 
     best_metric_epoch =0 
     if m_rank ==0: 
@@ -188,13 +197,13 @@ def dummy_main(rank,world_size,conf):
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
                     epoch=epoch,conf=conf)
         lr_scheduler.step()
-        epoch_loss = reduce_tensors(epoch_loss,world_size=dist.get_world_size()).item()
+        epoch_loss = reduce_tensors(epoch_loss,world_size=dist.get_world_size()).item() if world_size >=2 else epoch_loss.item()
         if writer: 
             writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch) 
             
         all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
-        dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size())
-        loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) 
+        dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size()) if world_size >=2 else all_d
+        loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) if world_size >=2 else all_d
         if writer: 
             writer.add_scalar("val_loss",loss_reduc,global_step=epoch) 
             writer.add_scalar("val_dice",dice_reduc,global_step=epoch)
@@ -217,10 +226,12 @@ def dummy_main(rank,world_size,conf):
             )
         if rank==0 and (epoch - best_metric_epoch) > 100 and abs(best_metric - all_d) < 0.01:
             #  we will exit training  because the model has not made large useful progres sin a reasonable amount of time
-            print(f"Killign training due to insufficient progress")
-            dist.destroy_process_group()
-            break 
-    dist.destroy_process_group()
+            if world_size >=2: 
+                print(f"Killign training due to insufficient progress")
+                dist.destroy_process_group()
+            break
+    if world_size>=2:  
+        dist.destroy_process_group()
 
 
 
@@ -232,84 +243,6 @@ def setup_repro(seed):
     np.random.seed(seed)
 
 
-def main(conf_in, trial=None):
-    if trial:
-        conf = optuna_gen(copy(conf_in), trial)
-    else:
-        conf = conf_in
-    seed = conf_in['seed']
-    cache_dir = conf_in['cache_dir']
-    dset = kit_factory('cached')
-    batch_size = conf['batch_size']
-    lr = conf['learn_rate'] 
-    mommentum = conf['momentum']
-    os.makedirs(cache_dir, exist_ok=True)
-    train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries  
-    train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
-    train_ds = dset(train, transform=train_transform, cache_dir=cache_dir)
-    val_ds = dset(val, transform=val_transform, cache_dir=cache_dir)
-    test_ds = dset(test, transform=val_transform, cache_dir=cache_dir)
-    num_workers = conf["num_workers"]
-    if conf["train_mode"] == "debias" or conf["train_mode"] == "mixed":
-        sampler = help_utils.makeWeightedsampler(train)
-        shuffle = False
-    else:
-        sampler = None
-        shuffle = True
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        collate_fn=help_transforms.ramonPad(),
-        sampler=sampler,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=1,
-        shuffle=True,
-        num_workers=num_workers,
-        collate_fn=help_transforms.ramonPad(),
-    )
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=1,
-        shuffle=False,
-        num_workers=num_workers,
-        collate_fn=help_transforms.ramonPad(),
-    )
-    loaders = (train_loader, val_loader, test_loader)
-    DEVICE = torch.device('cuda')
-    model = model_factory(config=conf)
-    if "pretrained" in conf.keys():
-        # TODO add support for continuing training by providing optinal path to checkpoint
-        ck = torch.load(conf["pretrained"])
-        model.load_state_dict(ck["state_dict"])
-        print("state dict loaded")
-    model = model.to(torch.float32).to(DEVICE)
-    # model = torch.compile(model, fullgraph=False, dynamic=True)
-
-    # TODO: make the dice metric and loss function modifiable
-    loss_function = DiceCELoss(
-        include_background=True, reduction="mean", to_onehot_y=True, softmax=True
-    )
-    if conf["train_mode"] == "vanilla" or conf['train_mode']=='mixed':
-        # lr should be 0.01 for these experiments
-        optimizer = torch.optim.SGD(model.parameters(), lr, momentum=mommentum)
-        lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(
-            optimizer,
-            total_iters=conf["epochs"],
-        )
-        val_loss = train_batch(
-            model,
-            loaders,
-            optimizer,
-            lr_scheduler,
-            loss_function,
-            device=DEVICE,
-            config=conf,
-        ) 
-    #TODO: ADD TESTING OF THE BEST MODEL 
 
 
 if __name__ == "__main__":

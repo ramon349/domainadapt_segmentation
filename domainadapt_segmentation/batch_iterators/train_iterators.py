@@ -119,6 +119,10 @@ def eval_loop(model, loader, writer, epoch, device, config):
     _step = 0 
     rank = dist.get_rank() 
     print('On Validation')
+    #set up some inference terms 
+    roi_size = config['spacing_vox_dim']
+    batch_size = config['batch_size']
+
     with torch.no_grad():
         for i,val_data in enumerate(loader):
             if rank==0: 
@@ -137,8 +141,13 @@ def eval_loop(model, loader, writer, epoch, device, config):
             val_inputs, val_labels = (
                 val_data[img_k].to(device),
                 val_data[lbl_k].to(device),
-            )
-            val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=(128,128,1),sw_batch_size=16,predictor=model,slide_window_compress=True,sw_device=device)
+            ) 
+            with torch.no_grad():
+                #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
+                if config['2Dvs3D'] == "2D": 
+                    val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,slide_window_compress=True,sw_device=device)
+                else: 
+                    val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,sw_device=device)
             val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
             val_labels = [post_label(i) for i in decollate_batch(val_labels)]
             metric(y_pred=val_outputs, y=val_labels)
@@ -158,7 +167,8 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
     img_k = conf['img_key_name'] 
     lbl_k = conf['lbl_key_name']
     model.train()
-    rank = dist.get_rank() 
+    rank = dist.get_rank() if len(conf['device'])>=2  else 0 
+    world_size = dist.get_world_size() if len(conf['device'])>=2 else 1
     step= 0  
     device = torch.device(f"cuda:{rank}")
     epoch_loss = 0  
@@ -177,7 +187,6 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
         for e in optis: 
             optis[e].zero_grad() 
         step +=1 
-        step += 1
         inputs = inputs.to(device)
         labels = labels.to(device)
         outputs = model(inputs) 
@@ -185,7 +194,7 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
         loss.backward() 
         optis['task'].step() 
         epoch_loss += loss.cpu().detach()
-        local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item()
+        local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item() if  world_size >=2 else loss
         if writer: 
             writer.add_scalar(
                 "batch_f_loss",
@@ -193,9 +202,9 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
                 global_step=global_step_count,
             )
         global_step_count += 1
-        epoch_loss /= step 
-        epoch_loss =  epoch_loss.to(device)
-        print(f" I am rank {rank} i have completed {global_step_count}")
+    epoch_loss /= step 
+    epoch_loss =  epoch_loss.to(device)
+    print(f" I am rank {rank} i have completed {global_step_count}")
     return epoch_loss,global_step_count
          
 

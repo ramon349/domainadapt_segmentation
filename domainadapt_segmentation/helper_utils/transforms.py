@@ -79,7 +79,7 @@ def get_transform(name, conf,mode='train'):
         assert ps_samples < 1
         return RandCropByPosNegLabeld(
             keys=transform_ins,
-            spatial_size=[-1,-1,1],
+            spatial_size=vox_dim,
             num_samples=num_samples,
             label_key=lbl_k,
             pos=ps_samples,
