@@ -36,11 +36,11 @@ def _proc3dbatch(imgs: torch.Tensor, labels: torch.Tensor):
     img_l = list()
     lbl_l = list()
     for e in range(imgs.shape[0]):  # iterate trhough batch
-        l_idx = labels[e][0].sum(dim=0).sum(dim=0).argmax()
+        l_idx = labels[e][-1].sum(dim=0).sum(dim=0).argmax()
         img_s = (
-            imgs[e][0][:, :, l_idx].unsqueeze(0).unsqueeze(0)
+            imgs[e][-1][:, :, l_idx].unsqueeze(0).unsqueeze(0)
         )  # the [0] after e is to account for  channel dimension
-        lbl_s = labels[e][0][:, :, l_idx].unsqueeze(0).unsqueeze(0)
+        lbl_s = labels[e][-1][:, :, l_idx].unsqueeze(0).unsqueeze(0)
         img_l.append(img_s)
         lbl_l.append(lbl_s)
     return torch.cat(img_l, axis=0), torch.cat(lbl_l, axis=0)
@@ -49,27 +49,42 @@ def _proc2dbatch(imgs:torch.Tensor,labels:torch.Tensor):
     return  imgs,  labels
 
 
-def proc_batch(imgs: torch.Tensor, labels: torch.Tensor,config=None):
+def proc_batch(imgs: torch.Tensor, labels: torch.Tensor,preds = None,config=None):
     if config['2Dvs3D']=='3D': 
-        return _proc3dbatch(imgs,labels)
+        imgs,_labels = _proc3dbatch(imgs,labels) 
+        if not (preds is None): 
+            preds,_labels = _proc3dbatch(preds,labels) 
+        return imgs,_labels,preds
     if config['2Dvs3D']=='2D':
-        return imgs,labels
+        return imgs,labels,preds 
 
 
 
-def write_batches(writer: SummaryWriter, inputs, labels, epoch,dset=None,config=None,is_eval=False):
-    if is_eval: 
-        label_s = labels[0,0,:,:,:] 
+def write_batches(writer: SummaryWriter, inputs, labels,epoch,preds=None,dset=None,config=None,is_eval=False):
+    if is_eval and config['2Dvs3D']=='2D': 
+        label_s = labels[0,1,:,:,:] 
         slice_idx = torch.argmax(label_s.sum(axis=0).sum(axis=0))
         inputs = inputs[:,:,:,:,slice_idx] 
         labels = labels[:,:,:,:,slice_idx]  
+        if not (preds is None): 
+            preds = preds[:,:,:,:,slice_idx]
 
     if writer: 
         # do some processing then
-        out_imgs, out_lbls = proc_batch(imgs=inputs, labels=labels,config=config)
+        out_imgs, out_lbls,preds = proc_batch(imgs=inputs, labels=labels,preds=preds,config=config)
         writer.add_images(f"{dset}_set_img", out_imgs, global_step=epoch)
         writer.add_images(f"{dset}_set_lbl", out_lbls, global_step=epoch)
 
+def write_pred_batches(writer: SummaryWriter, inputs, labels,epoch,preds=None,dset=None,config=None,is_eval=False):
+    labels = torch.cat([e.unsqueeze(0) for e in labels]).to('cpu')
+    preds = torch.cat([e.unsqueeze(0) for e in preds]).to('cpu')
+    if writer: 
+        # do some processing then
+        out_imgs, out_lbls,preds = proc_batch(imgs=inputs, labels=labels,preds=preds,config=config)
+        writer.add_images(f"{dset}_set_img", out_imgs, global_step=epoch)
+        writer.add_images(f"{dset}_set_lbl_{1}", out_lbls, global_step=epoch)
+        if not (preds is None): 
+            writer.add_images(f"{dset}_set_pred_{1}", preds, global_step=epoch)
 
 def show_large_slice(input_dict):
     # TODO: MAKE IT SO I CAN USE THIS IN TENSORBOARD LOGGING

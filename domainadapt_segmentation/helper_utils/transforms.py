@@ -15,7 +15,8 @@ from monai.transforms import (
     LabelToMaskd,
     SqueezeDimd,
     Resized,
-    SpatialPad
+    SpatialPad,
+    Activations,
 )
 from monai.data import NibabelReader
 import torch
@@ -84,7 +85,7 @@ def get_transform(name, conf,mode='train'):
             label_key=lbl_k,
             pos=ps_samples,
             neg=neg_samples,
-            allow_smaller=allow_smaller,
+            allow_smaller=False,
         )
     if name == "spatial_pad_l":
         vox_dim = conf["spacing_vox_dim"] 

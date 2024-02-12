@@ -50,7 +50,7 @@ def model_factory(config):
         return net
     if model_name =='3DUnet':
         kernels,strides = get_kernels_strides(config['spacing_vox_dim'],config['spacing_pix_dim'])
-        net = monaiUNet(spatial_dims=3,in_channels=1,out_channels=1,  channels=(16, 32, 64, 128, 256, 512),
+        net = monaiUNet(spatial_dims=3,in_channels=1,out_channels=config['num_seg_labels'],  channels=(16, 32, 64, 128, 256, 512),
             strides=(2, 2, 2, 2, 2),
             num_res_units=2,
             act="LEAKYRELU",
