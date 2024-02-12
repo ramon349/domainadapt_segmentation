@@ -59,10 +59,10 @@ def build_optimizers(model,conf=None):
 def build_criterions(conf=None): 
     if conf['train_mode']=='vanilla': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",sigmoid=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
     if conf['train_mode']=='dinsdale': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",sigmoid=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
         criterions['domain'] = torch.nn.CrossEntropyLoss()
         criterions['conf'] = confusion_loss()
     return criterions
@@ -127,8 +127,8 @@ def dummy_main(rank,world_size,conf):
         print(
             "we are outputting to devset we are therefore using a smaller train sample for dev"
         )
-        train = random.sample(train, 30)
-        val = random.sample(val, 30)
+        train = random.sample(train, 20)
+        val = random.sample(val, 20)
     train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
     if world_size >=2: 
         tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False) [dist.get_rank()] # this will create a dataset  for each partion 
@@ -185,7 +185,7 @@ def dummy_main(rank,world_size,conf):
         log_path = help_utils.figure_version(
             conf["log_dir"]
         )  # TODO think about how you could perhaps continue training
-        weight_path = conf["log_dir"].replace("model_logs", "model_checkpoints")
+        weight_path =log_path 
         if not os.path.isdir(weight_path):
             os.makedirs(weight_path)
         if not os.path.isdir(log_path):

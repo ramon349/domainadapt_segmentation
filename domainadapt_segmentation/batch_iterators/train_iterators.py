@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from ..helper_utils import utils as help_utils
 from monai.transforms import AsDiscrete, Compose,Activations
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss,DiceCELoss
 from monai.metrics import DiceMetric
 from monai.data import decollate_batch
 from monai.inferers import sliding_window_inference
@@ -111,11 +111,11 @@ def eval_loop(model, loader, writer, epoch, device, config):
     num_seg_labels = config["num_seg_labels"]
     metric = DiceMetric(include_background=True,reduction="mean")
     model.eval()
-    loss_function = DiceLoss(include_background=True, reduction="mean",to_onehot_y=False,softmax=False)
+    loss_function = DiceLoss(include_background=True,reduction="mean")
     all_losses = list()
     dice_scores = list()
-    to_probs = torch.nn.Softmax(dim=0)
-    post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    post_pred = Compose([Activations(softmax=True), AsDiscrete(threshold=0.5)])
+    post_label = Compose([AsDiscrete(to_onehot=2)])
     _step = 0 
     rank = dist.get_rank()  if len(config['device'])>=2 else 0
     print(f'{rank}: On Validation')
@@ -124,36 +124,37 @@ def eval_loop(model, loader, writer, epoch, device, config):
     batch_size = config['batch_size']
     with torch.no_grad():
         for i,val_data in enumerate(loader):
-            if rank==0 and _step==0 and epoch==0: 
-                help_utils.write_batches(
-                    writer=writer,
-                    inputs=val_data[img_k].detach(),
-                    labels=val_data[lbl_k].detach(),
-                    epoch=epoch,
-                    dset='val',
-                    config=config, 
-                    is_eval=True
-                ) 
-
             val_inputs, val_labels = (
                 val_data[img_k].to(device),
-                val_data[lbl_k].to(device),
+                val_data[lbl_k],
             ) 
             #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
             if config['2Dvs3D'] == "2D": 
                 val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,slide_window_compress=True,sw_device=device)
             else: 
                 val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,sw_device=device,mode='constant',device='cpu').to(device)
-            val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
-            val_labels =  decollate_batch(val_labels)
+            val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_outputs)]
+            val_labels =  [post_label(i).to('cpu') for i in decollate_batch(val_labels)]
+            if rank==0 and _step==0: 
+                help_utils.write_pred_batches(
+                        writer=writer,
+                        inputs=val_data[img_k].detach(),
+                        labels=val_labels,
+                        preds=val_outputs,
+                        epoch=epoch,
+                        dset='val',
+                        config=config, 
+                        is_eval=True
+                    ) 
             metric_val = metric(y_pred=val_outputs, y=val_labels)
             metric.reset()
             dice_scores.append(metric_val)
-            print(metric_val.shape)
             loss = sum(
                 loss_function(v_o, v_l) for v_o, v_l in zip(val_outputs, val_labels)
             )
             all_losses.append(loss)
+            _step +=1 
+
         all_l = torch.mean(torch.stack(all_losses)).to(device)
         all_d = torch.mean(torch.vstack(dice_scores)).to(device)
         print(f"{rank} got avg dice of {all_d} and dice loss {all_l}")
