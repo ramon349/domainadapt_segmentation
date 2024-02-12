@@ -8,11 +8,11 @@ from .helper_utils import transforms as help_transforms
 from .helper_utils import utils as help_utils
 from .batch_iterators.train_iterators import *
 from .data_factories.kits_factory import kit_factory
-from monai.data import DataLoader,SmartCacheDataset,partition_dataset
+from monai.data import SmartCacheDataset,partition_dataset
 from .models.model_factory import model_factory
 from monai.losses import DiceCELoss
-import torch._dynamo
 import torch.multiprocessing as mp
+from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 import os
@@ -59,10 +59,10 @@ def build_optimizers(model,conf=None):
 def build_criterions(conf=None): 
     if conf['train_mode']=='vanilla': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=False,softmax=False)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",sigmoid=True)
     if conf['train_mode']=='dinsdale': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=False,softmax=False)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",sigmoid=True)
         criterions['domain'] = torch.nn.CrossEntropyLoss()
         criterions['conf'] = confusion_loss()
     return criterions
@@ -98,6 +98,7 @@ def _parse():
         os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
         if world_size==1: 
+            print('we are not doing parallel')
             dummy_main(0,1,conf) 
         else:
             mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True,)
@@ -120,7 +121,7 @@ def dummy_main(rank,world_size,conf):
         m_rank = 0 
     #here we set up the partitioning of the training data across all the workers 
     ##SETUP ALL THE DATASET RELATED ITEMS 
-    train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries  
+    train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries 
     # use short circuitting to check if dev is  a field
     if "dev" in conf.keys() and conf["dev"] == True:
         print(
@@ -140,21 +141,23 @@ def dummy_main(rank,world_size,conf):
     cache_dir = conf['cache_dir']
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
+    #tr_dset = dset(tr_part,transform= train_transform)
+    #val_dset = dset(val_part,transform=val_transform)
     num_workers = conf['num_workers']
     train_dl = DataLoader(
         tr_dset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=help_transforms.ramonPad(),
         sampler=None,
+        collate_fn=help_transforms.ramonPad()
     )
     val_dl = DataLoader(
         val_dset,
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        collate_fn=help_transforms.ramonPad(),
+        collate_fn=help_transforms.ramonPad()
     )
     device = torch.device(f"cuda:{rank}")
     #torch.cuda.set_device(device) 
@@ -198,10 +201,12 @@ def dummy_main(rank,world_size,conf):
                     epoch=epoch,conf=conf)
         lr_scheduler.step()
         epoch_loss = reduce_tensors(epoch_loss,world_size=dist.get_world_size()).item() if world_size >=2 else epoch_loss.item()
+        print(f"{rank} epoch loss: {epoch_loss}")
         if writer: 
             writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch) 
             
         all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
+        print("Done with the  eval loop")
         dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size()) if world_size >=2 else all_d
         loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) if world_size >=2 else all_d
         if writer: 

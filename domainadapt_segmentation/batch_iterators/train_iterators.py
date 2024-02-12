@@ -3,7 +3,7 @@ import sys
 import torch
 import numpy as np
 from ..helper_utils import utils as help_utils
-from monai.transforms import AsDiscrete, Compose
+from monai.transforms import AsDiscrete, Compose,Activations
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
 from monai.data import decollate_batch
@@ -109,25 +109,22 @@ def eval_loop(model, loader, writer, epoch, device, config):
     img_k = config["img_key_name"]
     lbl_k = config["lbl_key_name"]
     num_seg_labels = config["num_seg_labels"]
-    metric = DiceMetric(include_background=True, reduction="mean")
+    metric = DiceMetric(include_background=True,reduction="mean")
     model.eval()
-    loss_function = DiceLoss(include_background=True, reduction="mean")
+    loss_function = DiceLoss(include_background=True, reduction="mean",to_onehot_y=False,softmax=False)
     all_losses = list()
     dice_scores = list()
-    post_pred = Compose([AsDiscrete(argmax=True, to_onehot=num_seg_labels)])
-    post_label = Compose([AsDiscrete(to_onehot=num_seg_labels)])
+    to_probs = torch.nn.Softmax(dim=0)
+    post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
     _step = 0 
-    rank = dist.get_rank() 
-    print('On Validation')
+    rank = dist.get_rank()  if len(config['device'])>=2 else 0
+    print(f'{rank}: On Validation')
     #set up some inference terms 
     roi_size = config['spacing_vox_dim']
     batch_size = config['batch_size']
-
     with torch.no_grad():
         for i,val_data in enumerate(loader):
-            if rank==0: 
-                print(f"Val:{i}",end="\r")
-            if _step==0 and epoch==0: 
+            if rank==0 and _step==0 and epoch==0: 
                 help_utils.write_batches(
                     writer=writer,
                     inputs=val_data[img_k].detach(),
@@ -142,24 +139,24 @@ def eval_loop(model, loader, writer, epoch, device, config):
                 val_data[img_k].to(device),
                 val_data[lbl_k].to(device),
             ) 
-            with torch.no_grad():
-                #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
-                if config['2Dvs3D'] == "2D": 
-                    val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,slide_window_compress=True,sw_device=device)
-                else: 
-                    val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,sw_device=device)
+            #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
+            if config['2Dvs3D'] == "2D": 
+                val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,slide_window_compress=True,sw_device=device)
+            else: 
+                val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,sw_device=device,mode='constant',device='cpu').to(device)
             val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
-            val_labels = [post_label(i) for i in decollate_batch(val_labels)]
-            metric(y_pred=val_outputs, y=val_labels)
-            metric_val = metric.aggregate().item()
+            val_labels =  decollate_batch(val_labels)
+            metric_val = metric(y_pred=val_outputs, y=val_labels)
             metric.reset()
             dice_scores.append(metric_val)
+            print(metric_val.shape)
             loss = sum(
                 loss_function(v_o, v_l) for v_o, v_l in zip(val_outputs, val_labels)
             )
             all_losses.append(loss)
         all_l = torch.mean(torch.stack(all_losses)).to(device)
-        all_d = torch.mean(torch.tensor(dice_scores)).to(device)
+        all_d = torch.mean(torch.vstack(dice_scores)).to(device)
+        print(f"{rank} got avg dice of {all_d} and dice loss {all_l}")
     return all_d, all_l
 
 

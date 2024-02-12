@@ -58,7 +58,7 @@ def proc_batch(imgs: torch.Tensor, labels: torch.Tensor,config=None):
 
 
 def write_batches(writer: SummaryWriter, inputs, labels, epoch,dset=None,config=None,is_eval=False):
-    if is_eval: 
+    if is_eval and config['2Dvs3D']=='2D': 
         label_s = labels[0,0,:,:,:] 
         slice_idx = torch.argmax(label_s.sum(axis=0).sum(axis=0))
         inputs = inputs[:,:,:,:,slice_idx] 
