@@ -2,6 +2,7 @@ from monai.networks.nets.dynunet import DynUNet
 from monai.networks.nets.unet import Unet as monaiUNet
 from .dinsdale import RamenDinsdale2D
 from .dinsdale import UNet as Dinsdale2DUnet
+import pdb 
 def get_kernels_strides(patch_size,spacing):
     """
     This function is only used for decathlon datasets with the provided patch sizes.
@@ -37,6 +38,17 @@ def get_kernels_strides(patch_size,spacing):
 def model_factory(config):
     model_name = config["model"]
     num_seg_labels = config["num_seg_labels"]
+    if model_name=='unet':
+        net =  monaiUNet(
+            spatial_dims=3,
+            in_channels=1,
+            out_channels=num_seg_labels,
+            channels=(16, 32, 64, 128, 256, 512),
+            strides=(2, 2, 2, 2, 2),
+            num_res_units=2,
+            act="LEAKYRELU",
+        )
+        return net
     if model_name == "2DUnet":
         net = DynUNet(
             spatial_dims=2,
