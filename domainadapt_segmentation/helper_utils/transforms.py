@@ -42,7 +42,7 @@ def get_transform(name, conf,mode='train'):
     if name == "load":
         # for now reader will only be the nibabel one
         # TODO make it interchangeable with the GCP one
-        return LoadImaged(keys=transform_ins,reader=NibabelReader)
+        return LoadImaged(keys=transform_ins,reader=NibabelReader,image_only=False)
     if name == "channel_first":
         return EnsureChannelFirstd(keys=transform_ins)
     if name == "scale_intensity":

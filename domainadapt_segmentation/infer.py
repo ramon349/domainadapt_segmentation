@@ -74,7 +74,7 @@ def infer_main():
     batch_size = 1,
     shuffle=False,
     num_workers = 8,
-    collate_fn = help_transforms.ramonPad())
+    collate_fn = help_transforms.ramonPad(),)
     model = model.to(device=device)
     model.eval() 
     post_transform = make_post_transforms(config,test_transforms=test_t)
