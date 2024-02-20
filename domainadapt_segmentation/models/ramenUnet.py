@@ -2,6 +2,7 @@ from monai.networks.nets.unet import Unet
 from monai.networks.nets.dynunet import DynUNet
 import warnings
 from typing import Optional, Sequence, Tuple, Union
+from monai.utils import UpsampleMode
 from torch import nn
 import torch 
 import pdb 
@@ -117,3 +118,37 @@ def calc_output_shape(arr_dim,padding=0,dilation=0,kernel_size=0,stride=0):
     numerator = arr_dim + 2*padding - dilation*(kernel_size-1)-1 
     denum = stride
     return torch.floor((numerator/denum) + 1 ) 
+from monai.networks.nets.segresnet import SegResNet
+class segResnetBias(SegResNet):
+    def __init__(self,         spatial_dims: int = 3,
+        init_filters: int = 8,
+        in_channels: int = 1,
+        out_channels: int = 2,
+        dropout_prob: float | None = None,
+        act: tuple | str = ("RELU", {"inplace": True}),
+        norm: tuple | str = ("GROUP", {"num_groups": 8}),
+        norm_name: str = "",
+        num_groups: int = 8,
+        use_conv_final: bool = True,
+        blocks_down: tuple = (1, 2, 2, 4),
+        blocks_up: tuple = (1, 1, 1),
+        upsample_mode: UpsampleMode | str = UpsampleMode.NONTRAINABLE,
+    ):
+        super().__init__(spatial_dims=spatial_dims, init_filters=init_filters, in_channels=in_channels, out_channels=out_channels, dropout_prob=dropout_prob, act=act, norm=norm, norm_name=norm_name, num_groups=num_groups, use_conv_final=use_conv_final, blocks_down=blocks_down, blocks_up=blocks_up, upsample_mode=upsample_mode)
+        self.comp = nn.Sequential(
+            nn.Conv3d(64,32,3,3,2),
+            nn.GroupNorm(32,32,eps=0.00001,affine=True),
+            nn.Conv3d(32,16,3,3,2),
+            nn.GroupNorm(16,16,eps=0.00001,affine=True)
+        )
+    def forward(self,x): 
+        x, down_x = self.encode(x)
+        down_x.reverse()
+        embed = self.comp(down_x[0] )
+        flat_vec = embed.flatten(1)
+        x = self.decode(x, down_x)
+        if self.training: 
+            return x, flat_vec
+        else: 
+            return x 
+        
