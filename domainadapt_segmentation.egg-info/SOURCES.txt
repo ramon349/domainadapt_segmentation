@@ -20,4 +20,6 @@ domainadapt_segmentation/helper_utils/data_io.py
 domainadapt_segmentation/helper_utils/transforms.py
 domainadapt_segmentation/helper_utils/utils.py
 domainadapt_segmentation/models/__init__.py
+domainadapt_segmentation/models/dinsdale.py
 domainadapt_segmentation/models/model_factory.py
+domainadapt_segmentation/models/ramenUnet.py

@@ -158,7 +158,7 @@ def build_args():
         "--train_mode",
         type=str,
         required=True,
-        choices=["vanilla", "debias", "dinsdale","mixed"],
+        choices=["vanilla", "debias", "dinsdale","mixed","consistency"],
     )
     parser.add_argument("--log_dir", type=str, required=True) 
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
