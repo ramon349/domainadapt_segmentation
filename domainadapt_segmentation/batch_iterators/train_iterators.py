@@ -192,16 +192,29 @@ def train_consistency(model=None,train_dl=None,optis=None,criterions=None,writer
         labels = labels.to(device)
         outputs,embeds = model(inputs) 
         loss = criterions['task'](outputs,labels)
-        loss.backward()  
-        other_loss = criterions['consistency'](labels,embeds)
-        other_loss.backward()
-        optis['all'].step() 
-        epoch_loss += loss.cpu().detach()
-        local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item() if  world_size >=2 else loss
+        neg_far,po_close = criterions['consistency'](labels,embeds,device)
+        const_loss = 0.25*neg_far + 0.75*po_close
+        total_loss = loss + const_loss
+        total_loss.backward()
+        optis['task'].step() 
+        epoch_loss += total_loss.cpu().detach()
+        dice_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item() if  world_size >=2 else loss
+        consistency_loss = reduce_tensors(tensor=const_loss,world_size=dist.get_world_size()).cpu().item() if  world_size >=2 else loss
+        ov_loss = reduce_tensors(tensor=total_loss,world_size=dist.get_world_size()).cpu().item() if world_size>=2 else loss 
         if writer: 
             writer.add_scalar(
-                "batch_f_loss",
-                local_loss,
+                "batch_ov_loss",
+                ov_loss,
+                global_step=global_step_count,
+            )
+            writer.add_scalar(
+                "batch_dice_loss",
+                dice_loss,
+                global_step=global_step_count,
+            )
+            writer.add_scalar(
+                "batch_consistency_loss",
+                consistency_loss,
                 global_step=global_step_count,
             )
         global_step_count += 1

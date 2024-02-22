@@ -81,7 +81,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale"],
+        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale","3DSegRes"],
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")

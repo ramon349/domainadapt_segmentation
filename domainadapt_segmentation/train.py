@@ -58,27 +58,27 @@ def build_optimizers(model,conf=None):
         optis = {'task':optim_seg,'domain_optim':opti_dm,'confuse_opti':opti_conf}
     if conf['train_mode']=='consistency': 
         optim_all = optim.Adam(get_params_list(model,'all'),lr=0.1) 
-        optis = {'all':optim_all}
+        optis = {'task':optim_all}
 
 
     return optis  
 
-def my_consistency_loss(batch_lbl,flat_vec):
-    instances = (batch_lbl.sum(axis=-1).sum(axis=-1).sum(axis=-1)>=1).to(torch.int)
+def my_consistency_loss(batch_lbl,flat_vec,device):
+    instances = (batch_lbl.sum(axis=-1).sum(axis=-1).sum(axis=-1)>=1).to(torch.int).cpu()
     num_pos = instances.sum()
     num_ne = num_pos 
     ne_idx =  torch.where(instances==0)[0]
     pos_idx = torch.where(instances==1)[0]
-    neg_idx_sample = np.random.choice(ne_idx,num_ne)
+    neg_idx_sample = torch.tensor(np.random.choice(ne_idx,num_ne)).to(device)
     neg_batch = flat_vec[neg_idx_sample]
     pos_batch = flat_vec[pos_idx]
     loss_func = CosineEmbeddingLoss(0.5)
-    neg_labels = -1*torch.ones((num_ne,))
+    neg_labels = -1*torch.ones((num_ne,)).to(device)
     make_pos_neg_far = loss_func(pos_batch,neg_batch,neg_labels)
-    rand_per = np.random.permutation(torch.tensor(range(pos_batch.shape[0])))
-    pos_labels = torch.ones((num_pos,))
+    rand_per = torch.tensor(np.random.permutation(torch.tensor(range(pos_batch.shape[0])))).to(device)
+    pos_labels = torch.ones((num_pos,)).to(device)
     make_pos_pos_close = loss_func(pos_batch,pos_batch[rand_per],pos_labels) 
-    return 0.25*make_pos_neg_far + 0.75*make_pos_pos_close
+    return make_pos_neg_far , make_pos_pos_close
     
 
 
@@ -92,6 +92,7 @@ def build_criterions(conf=None):
         criterions['domain'] = torch.nn.CrossEntropyLoss()
         criterions['conf'] = confusion_loss()
     if conf['train_mode']=='consistency': 
+        criterions = dict() 
         criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
         criterions['consistency'] = my_consistency_loss
 
@@ -133,6 +134,20 @@ def _parse():
         else:
             mp.spawn(dummy_main,args=(world_size,conf),nprocs=world_size,join=True,)
         #main(conf)
+
+def train_dispatch(model=None,train_dl=None,optis=None,
+                    criterions=None,writer=None,global_step_count=None,
+                    epoch=None,conf=None):
+    train_mode= conf['train_mode']
+    if train_mode =='consistency': 
+        epoch_loss, global_step_count = train_consistency(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
+    if train_mode == 'vanilla': 
+        epoch_loss, global_step_count = train_basic(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
+    return epoch_loss,global_step_count
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
     tensor = tensor.clone() 
@@ -226,7 +241,7 @@ def dummy_main(rank,world_size,conf):
     global_step_count =0  
 
     for epoch in range (max_epochs): 
-        epoch_loss, global_step_count = train_basic(model=model,train_dl=train_dl,optis=optis,
+        epoch_loss, global_step_count = train_dispatch(model=model,train_dl=train_dl,optis=optis,
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
                     epoch=epoch,conf=conf)
         lr_scheduler.step()
