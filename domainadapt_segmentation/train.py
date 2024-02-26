@@ -221,6 +221,7 @@ def dummy_main(rank,world_size,conf):
     lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(
         optis['task'],
         total_iters=conf["epochs"],
+        power=0.5
     )  
     max_epochs = conf['epochs']
     best_metric =0 
