@@ -70,7 +70,7 @@ def eval_loop(model, loader,  config):
     model.eval()
     all_losses = list()
     dice_scores = list()
-    post_pred = Compose([AsDiscrete(argmax=True, to_onehot=num_seg_labels)])
+    post_pred = Compose([AsDiscrete(ar)])
     post_label = Compose([AsDiscrete(to_onehot=num_seg_labels)])
     _step = 0 
     pids = list() 

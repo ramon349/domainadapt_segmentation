@@ -68,7 +68,7 @@ def train_batch(
             inputs = inputs.to(device)
             labels = labels.to(device)
             outputs = model(inputs)
-            loss = loss_function(outputs, labels)
+            loss = loss_function(outputs, labels) 
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
@@ -113,11 +113,11 @@ def eval_loop(model, loader, writer, epoch, device, config):
     num_seg_labels = config["num_seg_labels"]
     metric = DiceMetric(include_background=True,reduction="mean")
     model.eval()
-    loss_function = DiceLoss(include_background=True,reduction="mean")
+    loss_function = DiceLoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
     all_losses = list()
     dice_scores = list()
-    post_pred = Compose([Activations(softmax=True), AsDiscrete(threshold=0.5)])
-    post_label = Compose([AsDiscrete(to_onehot=2)])
+    post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    post_label = Compose([Activations(to_onehot=2)])
     _step = 0 
     rank = dist.get_rank()  if len(config['device'])>=2 else 0
     print(f'{rank}: On Validation')
@@ -135,6 +135,7 @@ def eval_loop(model, loader, writer, epoch, device, config):
                 val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,slide_window_compress=True,sw_device=device)
             else: 
                 val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=model,sw_device=device,mode='constant',device='cpu').to(device)
+            loss = loss_function(val_outputs.to('cpu'),val_labels)
             val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_outputs)]
             val_labels =  [post_label(i).to('cpu') for i in decollate_batch(val_labels)]
             if rank==0 and _step==0: 
@@ -151,9 +152,6 @@ def eval_loop(model, loader, writer, epoch, device, config):
             metric_val = metric(y_pred=val_outputs, y=val_labels)
             metric.reset()
             dice_scores.append(metric_val)
-            loss = sum(
-                loss_function(v_o, v_l) for v_o, v_l in zip(val_outputs, val_labels)
-            )
             all_losses.append(loss)
             _step +=1 
 

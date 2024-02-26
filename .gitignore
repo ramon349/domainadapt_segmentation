@@ -9,3 +9,4 @@ notebooks/
 test_dir/ 
 domainadapt_segmentation/results
 domainadapt_segmentation.egg-info/
+build/

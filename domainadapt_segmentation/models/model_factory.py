@@ -1,5 +1,6 @@
 from monai.networks.nets.dynunet import DynUNet 
 from monai.networks.nets.unet import Unet as monaiUNet
+from monai.networks.nets.segresnet import SegResNet
 from .dinsdale import RamenDinsdale2D
 from .dinsdale import UNet as Dinsdale2DUnet
 from .ramenUnet import segResnetBias
@@ -89,6 +90,9 @@ def model_factory(config):
     if model_name=='2DRamenDinsdale':
         net = RamenDinsdale2D(1,2)
         return net
-    if model_name =='3DSegRes':
+    if model_name=='3DSegRes':
+        net = SegResNet(spatial_dims=3,in_channels=1,out_channels=num_seg_labels)
+        return net 
+    if model_name =='3DSegResBias':
         net = segResnetBias(spatial_dims=3,out_channels=num_seg_labels)
         return net 

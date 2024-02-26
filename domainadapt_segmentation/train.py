@@ -24,6 +24,7 @@ from torch.nn.parallel import DistributedDataParallel
 from domainadapt_segmentation.helper_utils.utils import confusion_loss
 from torch.nn import CosineEmbeddingLoss 
 import numpy as np 
+import pdb 
 
 def optuna_gen(conf_in, trial):
     pass
@@ -85,15 +86,15 @@ def my_consistency_loss(batch_lbl,flat_vec,device):
 def build_criterions(conf=None): 
     if conf['train_mode']=='vanilla': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
     if conf['train_mode']=='dinsdale': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
         criterions['domain'] = torch.nn.CrossEntropyLoss()
         criterions['conf'] = confusion_loss()
     if conf['train_mode']=='consistency': 
         criterions = dict() 
-        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,softmax=True)
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
         criterions['consistency'] = my_consistency_loss
 
     return criterions
@@ -186,8 +187,6 @@ def dummy_main(rank,world_size,conf):
     cache_dir = conf['cache_dir']
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
-    #tr_dset = dset(tr_part,transform= train_transform)
-    #val_dset = dset(val_part,transform=val_transform)
     num_workers = conf['num_workers']
     train_dl = DataLoader(
         tr_dset,
