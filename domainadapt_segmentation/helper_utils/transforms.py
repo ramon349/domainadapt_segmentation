@@ -33,9 +33,9 @@ from monai.data.utils import list_data_collate
 def get_transform(name, conf,mode='train'):
     img_k = conf["img_key_name"]
     lbl_k = conf["lbl_key_name"]
-    if mode=='train': 
+    if mode=='train' or mode=='test': 
         transform_ins = [img_k,lbl_k]
-    else: 
+    if mode=='infer': 
         transform_ins = [img_k]
     if img_k == lbl_k:
         raise AssertionError("Image Key and Label Key should not be the same")
@@ -134,7 +134,6 @@ def get_transform(name, conf,mode='train'):
         ) #TODO: do i modify the border of the trianing of my model?  default was reflection. but should i use border padding instead?
     if name =='labelMask':
         label_vals = conf['label_vals']
-        print(label_vals)
         return LabelToMaskd(select_labels=label_vals,keys=[lbl_k],merge_channels=False)
     if name=='squeezeDim': 
         return SqueezeDimd(keys=[img_k,lbl_k],dim=-1) 

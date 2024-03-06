@@ -3,8 +3,11 @@ from monai.networks.nets.unet import Unet as monaiUNet
 from monai.networks.nets.segresnet import SegResNet
 from .dinsdale import RamenDinsdale2D
 from .dinsdale import UNet as Dinsdale2DUnet
-from .ramenUnet import segResnetBias
+from .ramenUnet import segResnetBias,SegResnetBiasClassi,SegResnetBiasClassiTwoBranch
 import pdb 
+import torch 
+from collections import OrderedDict 
+from ..helper_utils.utils import remove_ddp_tags
 
 def get_kernels_strides(patch_size,spacing):
     """
@@ -51,7 +54,6 @@ def model_factory(config):
             num_res_units=2,
             act="LEAKYRELU",
         )
-        return net
     if model_name == "2DUnet":
         net = DynUNet(
             spatial_dims=2,
@@ -62,7 +64,6 @@ def model_factory(config):
             num_res_units=2,
             act="LEAKYRELU",
         )
-        return net
     if model_name =='3DUnet':
         kernels,strides = get_kernels_strides(config['spacing_vox_dim'],config['spacing_pix_dim'])
         net = monaiUNet(spatial_dims=3,in_channels=1,out_channels=config['num_seg_labels'],  channels=(16, 32, 64, 128, 256, 512),
@@ -83,16 +84,21 @@ def model_factory(config):
             norm_name="INSTANCE")
         
         """
-        return net
     if model_name=='2DDinsdaleUnet':
         net = Dinsdale2DUnet(1,2)
-        return net
     if model_name=='2DRamenDinsdale':
         net = RamenDinsdale2D(1,2)
-        return net
     if model_name=='3DSegRes':
         net = SegResNet(spatial_dims=3,in_channels=1,out_channels=num_seg_labels)
-        return net 
     if model_name =='3DSegResBias':
         net = segResnetBias(spatial_dims=3,out_channels=num_seg_labels)
-        return net 
+    if model_name=='3DSegResBiasClass':
+        net = SegResnetBiasClassi(spatial_dims=3,out_channels=num_seg_labels)
+    if model_name=='3DSegResBiasClassTwo':
+        net =  SegResnetBiasClassiTwoBranch(spatial_dims=3,out_channels=num_seg_labels)
+    if 'model_weight' in config and config['model_weight']: 
+        print('loading weights')
+        checkpoint= torch.load(config['model_weight'],map_location='cpu') 
+        new_d = remove_ddp_tags(checkpoint['state_dict'])
+        net.load_state_dict(new_d,strict=False)
+    return net 

@@ -6,7 +6,7 @@ from glob import glob
 from torch.utils.data import WeightedRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 import torch
-
+from collections import OrderedDict
 
 def subsample_list(my_list: list, perc: float):
     num_samples = int(math.floor(len(my_list) * perc))
@@ -118,9 +118,15 @@ def makeWeightedsampler(ds):
 def load_weights(weight_path): 
     ck = torch.load(weight_path,map_location='cpu') 
     conf = ck['conf']
-    weights = ck['state_dict'] 
+    weights = remove_ddp_tags(ck['state_dict'] )
     return conf,weights 
 
+def remove_ddp_tags(state_d):
+    new_d = OrderedDict() 
+    for k,v in state_d.items(): 
+        new_name = k.replace("module.","") 
+        new_d[new_name] = v
+    return new_d
 import torch.nn as nn
 import torch
 import numpy as np

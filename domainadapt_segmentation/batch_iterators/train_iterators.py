@@ -111,9 +111,9 @@ def eval_loop(model, loader, writer, epoch, device, config):
     img_k = config["img_key_name"]
     lbl_k = config["lbl_key_name"]
     num_seg_labels = config["num_seg_labels"]
-    metric = DiceMetric(include_background=True,reduction="mean")
+    metric = DiceMetric(include_background=False,reduction="mean")
     model.eval()
-    loss_function = DiceLoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
+    loss_function = DiceLoss(include_background=False,reduction="mean",to_onehot_y=True,sigmoid=True)
     all_losses = list()
     dice_scores = list()
     post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
@@ -149,12 +149,12 @@ def eval_loop(model, loader, writer, epoch, device, config):
                         config=config, 
                         is_eval=True
                     ) 
-            metric_val = metric(y_pred=val_outputs, y=val_labels)
-            metric.reset()
-            dice_scores.append(metric_val)
+            metric(y_pred=val_outputs, y=val_labels)
+            metric_val= metric.aggregate("mean_batch")
+            print(metric_val)
+            dice_scores.extend(metric_val)
             all_losses.append(loss)
             _step +=1 
-
         all_l = torch.mean(torch.stack(all_losses)).to(device)
         all_d = torch.mean(torch.vstack(dice_scores)).to(device)
         print(f"{rank} got avg dice of {all_d} and dice loss {all_l}")

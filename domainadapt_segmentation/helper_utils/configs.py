@@ -81,7 +81,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale","3DSegRes"],
+        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale","3DSegRes","3DSegResBias"],
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")
@@ -164,6 +164,7 @@ def build_args():
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
     parser.add_argument('--seed',type=int,default=349)
     parser.add_argument("--resize_size",type=json.loads,required=False)
+    parser.add_argument("--model_weight",type=str,required=False)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)
@@ -176,9 +177,11 @@ def build_test_args():
     parser = argparse.ArgumentParser(
         description="Confguration for my deep learning model testing for segmentation"
     )
+    parser.add_argument('--config-path',required=False,type=open,action=LoadFromFile)
     parser.add_argument('--model_weight',required=True) 
     parser.add_argument('--output_dir',required=True)
     parser.add_argument('--device',default='cuda:0',required=False)
+    parser.add_argument("--metrics_path",required=True )
     return parser
 def build_infer_args(): 
     parser = argparse.ArgumentParser(

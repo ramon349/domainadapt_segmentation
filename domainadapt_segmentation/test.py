@@ -3,7 +3,7 @@ from .helper_utils import configs as help_configs
 from .helper_utils import  utils as help_utils 
 from .helper_utils import transforms as help_transforms
 from .models.model_factory import model_factory
-from monai.data import DataLoader
+from torch.utils.data import DataLoader
 from .data_factories.kits_factory import kit_factory
 import pickle  as pkl 
 ## unknown imports 
@@ -19,13 +19,15 @@ from monai.transforms import (
     Compose,
     AsDiscrete,
     AsDiscreted,
-    Activationsd
+    Activations
 )
 from monai.transforms import Invertd, SaveImaged, RemoveSmallObjectsd
 from hashlib import sha224
 import pandas as pd 
 from monai.metrics import DiceMetric 
 import numpy as np 
+import os 
+import pdb 
 
 def subject_formater(metadict,self):
     pid = metadict['filename_or_obj']
@@ -60,18 +62,18 @@ def make_post_transforms(test_conf,test_transforms):
     )
     return post_transforms
 
-def eval_loop(model, loader,  config):
+def eval_loop(model, loader,  config,device='cuda:0',post_t=None):
     roi_size = config["spacing_vox_dim"]
     img_k = config["img_key_name"]
     lbl_k = config["lbl_key_name"]
-    device = config["device"]
+    device = device
     num_seg_labels = config["num_seg_labels"]
     metric = DiceMetric(include_background=True, reduction="mean")
     model.eval()
     all_losses = list()
     dice_scores = list()
-    post_pred = Compose([AsDiscrete(ar)])
-    post_label = Compose([AsDiscrete(to_onehot=num_seg_labels)])
+    post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    post_label = Compose([Activations(to_onehot=2)])
     _step = 0 
     pids = list() 
     img_path = list() 
@@ -82,19 +84,21 @@ def eval_loop(model, loader,  config):
                 val_data[img_k].to(device),
                 val_data[lbl_k].to(device),
             )
-            val_outputs = sliding_window_inference(
+            val_data['pred'] = sliding_window_inference(
                 inputs=val_inputs,
                 roi_size=roi_size,
                 sw_batch_size=1,
                 predictor=model,
             )
-            val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
-            val_labels = [post_label(i) for i in decollate_batch(val_labels)]
+            val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_data['pred'])]
+            val_labels = [post_label(i).to('cpu') for i in decollate_batch(val_labels)]
+            val_store = [post_t(i) for i in decollate_batch(val_data)]
+
             metric(y_pred=val_outputs, y=val_labels)
             metric_val = metric.aggregate().item()
             metric.reset()
             dice_scores.append(metric_val)
-            pids.append(val_data['pid'])
+            pids.append(val_data['pid'][0])
             img_path.append(val_data['image_meta_dict']['filename_or_obj'])
             lbl_path.append(val_data['label_meta_dict']['filename_or_obj'])
         out_df = pd.DataFrame({'pids':pids,'img':img_path,'lbl':lbl_path,'dice':dice_scores}) 
@@ -114,19 +118,20 @@ def test_main():
     dset = kit_factory('basic') # dset that is not cached 
     test_t = help_transforms.gen_test_transforms(confi=train_conf)
     test_ds = dset(test,transform=test_t)
+    post_t= make_post_transforms(config,test_t)
     test_loader = DataLoader(test_ds,
-    batch_size = 1,
-    shuffle=False,
-    num_workers = 8,
-    collate_fn = help_transforms.ramonPad())
+        batch_size = 1,
+        shuffle=False,
+        num_workers = 8,
+        collate_fn = help_transforms.ramonPad())
     model = model.to(device=device)
     model.eval() 
-    post_transform = make_post_transforms(config,test_transforms=test_t)
-    roi_size = (96,96,32)# train_conf['spacing_vox_dim']
-    sw_batch_size=  1 
+    roi_size = train_conf['spacing_vox_dim']
+    sw_batch_size=  train_conf['rand_crop_label_num_samples']
+    f_name = train_conf['log_dir'].split('/')[-1]
+    results_path =  config['metrics_path']
     with torch.no_grad(): 
-       outs = eval_loop(model,test_loader,config=train_conf)
-       f_name = train_conf['log_dir'].split('/')[-1]
-       outs.to_csv(f'../results/{f_name}_test_set.csv',index=False)
+       outs = eval_loop(model,test_loader,config=train_conf,device=device,post_t=post_t)
+       outs.to_csv(results_path,index=False)
 if __name__ =='__main__': 
     test_main() 
