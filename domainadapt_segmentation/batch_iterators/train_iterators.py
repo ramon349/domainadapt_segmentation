@@ -15,6 +15,7 @@ from torch.nn.parallel import DistributedDataParallel
 import torch.distributed as dist 
 import numpy as np 
 from torch.nn import CosineEmbeddingLoss 
+from ..helper_utils.utils import _proc3dbatch
 
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
@@ -151,7 +152,6 @@ def eval_loop(model, loader, writer, epoch, device, config):
                     ) 
             metric(y_pred=val_outputs, y=val_labels)
             metric_val= metric.aggregate("mean_batch")
-            print(metric_val)
             dice_scores.extend(metric_val)
             all_losses.append(loss)
             _step +=1 
@@ -264,7 +264,64 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
     epoch_loss =  epoch_loss.to(device)
     print(f" I am rank {rank} i have completed {global_step_count}")
     return epoch_loss,global_step_count
+
+def train_basic_vae(model=None,train_dl=None,optis=None,criterions=None,writer=None,global_step_count=None,epoch=None,conf=None):
+    img_k = conf['img_key_name'] 
+    lbl_k = conf['lbl_key_name']
+    model.train()
+    rank = dist.get_rank() if len(conf['device'])>=2  else 0 
+    world_size = dist.get_world_size() if len(conf['device'])>=2 else 1
+    step= 0  
+    device = torch.device(f"cuda:{rank}")
+    epoch_loss = 0  
+    for batch_n,batch_data in enumerate(train_dl): 
+        print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
+        inputs, labels = (batch_data[img_k], batch_data[lbl_k])
+        if step == 0 and epoch % 2 == 0 and rank==0:
+            help_utils.write_batches(
+                writer=writer,
+                inputs=inputs.detach(),
+                labels=labels.detach(),
+                epoch=epoch,
+                dset='train',
+                config=conf
+            ) 
+        for e in optis: 
+            optis[e].zero_grad() 
+        step +=1 
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        outputs,recon_loss = model(inputs) 
+        loss = criterions['task'](outputs,labels) + recon_loss
+        loss.backward() 
+        optis['task'].step() 
+        epoch_loss += loss.cpu().detach()
+        local_loss = reduce_tensors(tensor=loss,world_size=dist.get_world_size()).cpu().item() if  world_size >=2 else loss
+        local_rec_loss = reduce_tensors(tensor=recon_loss,world_size=dist.get_world_size()).cpu().item() if  world_size >=2 else loss
+        if writer: 
+            writer.add_scalar(
+                "batch_f_loss",
+                local_loss,
+                global_step=global_step_count,
+            )
+            writer.add_scalar(
+                "batch_recon_loss",
+                local_rec_loss,
+                global_step=global_step_count,
+            )
+        global_step_count += 1
+    if rank==0:
+        view_recons(model,inputs,labels,writter=writer,epoch=epoch)
+    epoch_loss /= step 
+    epoch_loss =  epoch_loss.to(device)
+    print(f" I am rank {rank} i have completed {global_step_count}")
+    return epoch_loss,global_step_count
          
+def view_recons(model,imgs,labels,writter,epoch):
+    recon = model.module.get_recon(imgs)
+    out_imgs,out_lbls = _proc3dbatch(recon,labels)
+    if writter: 
+        writter.add_images(f"train_recon",out_imgs,global_step=epoch)
 
 
 

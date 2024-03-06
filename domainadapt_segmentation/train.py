@@ -49,7 +49,7 @@ def  get_params_list(model,name_select):
 def build_optimizers(model,conf=None): 
     lr = conf["learn_rate"]
     momentum = conf["momentum"]
-    if conf['train_mode']=='vanilla': 
+    if conf['train_mode']=='vanilla' or conf['train_mode']=='vae': 
         optis = dict() 
         optis['task'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
     if conf['train_mode']=='dinsdale':
@@ -60,8 +60,6 @@ def build_optimizers(model,conf=None):
     if conf['train_mode']=='consistency': 
         optim_all = optim.Adam(get_params_list(model,'all'),lr=0.1) 
         optis = {'task':optim_all}
-
-
     return optis  
 
 def my_consistency_loss(batch_lbl,flat_vec,device):
@@ -84,7 +82,7 @@ def my_consistency_loss(batch_lbl,flat_vec,device):
 
 
 def build_criterions(conf=None): 
-    if conf['train_mode']=='vanilla': 
+    if conf['train_mode']=='vanilla' or conf['train_mode']=='vae': 
         criterions = dict() 
         criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
     if conf['train_mode']=='dinsdale': 
@@ -146,6 +144,10 @@ def train_dispatch(model=None,train_dl=None,optis=None,
                     epoch=epoch,conf=conf)
     if train_mode == 'vanilla': 
         epoch_loss, global_step_count = train_basic(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
+    if train_mode == 'vae': 
+        epoch_loss, global_step_count = train_basic_vae(model=model,train_dl=train_dl,optis=optis,
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
                     epoch=epoch,conf=conf)
     return epoch_loss,global_step_count
@@ -221,7 +223,7 @@ def dummy_main(rank,world_size,conf):
     lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(
         optis['task'],
         total_iters=conf["epochs"],
-        power=0.5
+        power=1.5
     )  
     max_epochs = conf['epochs']
     best_metric =0 

@@ -1,3 +1,4 @@
+from __future__ import annotations 
 from monai.networks.nets.unet import Unet
 from monai.networks.nets.dynunet import DynUNet
 import warnings
@@ -9,7 +10,8 @@ import pdb
 import torch
 from torch.autograd import Function
 import time 
-
+from torch.nn import functional as F 
+from collections.abc import Sequence
 class GradReverse(Function):
     @staticmethod
     def forward(ctx, x):
@@ -118,7 +120,7 @@ def calc_output_shape(arr_dim,padding=0,dilation=0,kernel_size=0,stride=0):
     numerator = arr_dim + 2*padding - dilation*(kernel_size-1)-1 
     denum = stride
     return torch.floor((numerator/denum) + 1 ) 
-from monai.networks.nets.segresnet import SegResNet
+from monai.networks.nets.segresnet import SegResNet,SegResNetVAE
 class segResnetBias(SegResNet):
     def __init__(self,         spatial_dims: int = 3,
         init_filters: int = 8,
@@ -243,3 +245,48 @@ class SegResnetBiasClassiTwoBranch(SegResNet):
             return x, block_embed,mask_embed
         else: 
             return x 
+class SegResVAE(SegResNetVAE):
+    def __init__(self, input_image_size: Sequence[int], vae_estimate_std: bool = False, vae_default_std: float = 0.3, vae_nz: int = 256, spatial_dims: int = 3, init_filters: int = 8, 
+    in_channels: int = 1, out_channels: int = 2, dropout_prob: Optional[float] = None, 
+    act: Union[str, tuple] = ("RELU",{"inplace":True}),
+    norm: Union[Tuple, str] = ("GROUP",{"num_groups":8}),
+    use_conv_final: bool = True, blocks_down: tuple = (1,2,2,4), 
+    blocks_up: tuple = (1,1,1), upsample_mode: Union[UpsampleMode, str] = UpsampleMode.NONTRAINABLE):
+        super().__init__(input_image_size, vae_estimate_std, vae_default_std, vae_nz, spatial_dims, init_filters, in_channels, out_channels, dropout_prob, act, norm, use_conv_final, blocks_down, blocks_up, upsample_mode)
+    def forward(self, x):
+        out,loss = super().forward(x)
+        if self.training: 
+            return out,loss 
+        else: 
+            return out
+    def get_recon(self,x): 
+        vae_input,_ = self.encode(x)
+        x_vae = self.vae_down(vae_input)
+        x_vae = x_vae.view(-1, self.vae_fc1.in_features)
+        z_mean = self.vae_fc1(x_vae)
+
+        z_mean_rand = torch.randn_like(z_mean)
+        z_mean_rand.requires_grad_(False)
+        if self.vae_estimate_std:
+            z_sigma = self.vae_fc2(x_vae)
+            z_sigma = F.softplus(z_sigma)
+            vae_reg_loss = 0.5 * torch.mean(z_mean**2 + z_sigma**2 - torch.log(1e-8 + z_sigma**2) - 1)
+
+            x_vae = z_mean + z_sigma * z_mean_rand
+        else:
+            z_sigma = self.vae_default_std
+            vae_reg_loss = torch.mean(z_mean**2)
+
+            x_vae = z_mean + z_sigma * z_mean_rand
+        x_vae = self.vae_fc3(x_vae)
+        x_vae = self.act_mod(x_vae)
+        x_vae = x_vae.view([-1, self.smallest_filters] + self.fc_insize)
+        x_vae = self.vae_fc_up_sample(x_vae)
+
+        for up, upl in zip(self.up_samples, self.up_layers):
+            x_vae = up(x_vae)
+            x_vae = upl(x_vae)
+
+        x_vae = self.vae_conv_final(x_vae)
+        return x_vae 
+
