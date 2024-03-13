@@ -7,7 +7,7 @@ from torch.utils.data import WeightedRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 import torch
 from collections import OrderedDict
-
+import pdb 
 def subsample_list(my_list: list, perc: float):
     num_samples = int(math.floor(len(my_list) * perc))
     return random.sample(my_list, num_samples)
@@ -132,14 +132,21 @@ import torch
 import numpy as np
 #copied form dinsdale repo
 class confusion_loss(nn.Module):
-    def __init__(self, task=0):
+    def __init__(self, task=0,reduction=None):
         super(confusion_loss, self).__init__()
         self.task = task
+        self.reduction = reduction
 
     def forward(self, x, target):
+        eps = 1e-10
         # We only care about x
-        log = torch.log(x)
+        log = torch.log(nn.functional.softmax( x) + eps)
         log_sum = torch.sum(log, dim=1)
         normalised_log_sum = torch.div(log_sum,  x.size()[1])
-        loss = torch.mul(torch.sum(normalised_log_sum, dim=0), -1)
-        return loss
+        if self.reduction=='sum': 
+            loss = torch.mul(torch.sum(normalised_log_sum, dim=-1),-1) 
+        if self.reduction =='mean':
+            loss = torch.mul(torch.mean(normalised_log_sum),-1) 
+        if self.reduction =='none':
+            loss = torch.mul(normalised_log_sum,-1)
+        return loss 

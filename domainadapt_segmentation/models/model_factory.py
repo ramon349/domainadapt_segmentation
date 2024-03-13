@@ -1,14 +1,14 @@
 from monai.networks.nets.dynunet import DynUNet 
 from monai.networks.nets.unet import Unet as monaiUNet
-from monai.networks.nets.segresnet import SegResNet,SegResNetVAE
+from monai.networks.nets.segresnet import SegResNet,SegResNetVAE 
 from .dinsdale import RamenDinsdale2D
 from .dinsdale import UNet as Dinsdale2DUnet
-from .ramenUnet import segResnetBias,SegResnetBiasClassi,SegResnetBiasClassiTwoBranch,SegResVAE
+from .ramenUnet import segResnetBias,SegResnetBiasClassiOneBranch,SegResnetBiasClassiTwoBranch,SegResVAE
 import pdb 
 import torch 
 from collections import OrderedDict 
 from ..helper_utils.utils import remove_ddp_tags
-
+import pdb 
 def get_kernels_strides(patch_size,spacing):
     """
     This function is only used for decathlon datasets with the provided patch sizes.
@@ -71,19 +71,6 @@ def model_factory(config):
             num_res_units=2,
             act="LEAKYRELU",
         )
-
-        """
-         net = DynUNet(
-            spatial_dims=3,
-            in_channels=1,
-            out_channels=num_seg_labels,
-            kernel_size=kernels,
-            strides=strides,
-            res_block=True,
-            upsample_kernel_size=strides[1:],
-            norm_name="INSTANCE")
-        
-        """
     if model_name=='2DDinsdaleUnet':
         net = Dinsdale2DUnet(1,2)
     if model_name=='2DRamenDinsdale':
@@ -92,8 +79,8 @@ def model_factory(config):
         net = SegResNet(spatial_dims=3,in_channels=1,out_channels=num_seg_labels)
     if model_name =='3DSegResBias':
         net = segResnetBias(spatial_dims=3,out_channels=num_seg_labels)
-    if model_name=='3DSegResBiasClass':
-        net = SegResnetBiasClassi(spatial_dims=3,out_channels=num_seg_labels)
+    if model_name=='3DSegResBiasClassOne':
+        net = SegResnetBiasClassiOneBranch(spatial_dims=3,out_channels=num_seg_labels)
     if model_name=='3DSegResBiasClassTwo':
         net =  SegResnetBiasClassiTwoBranch(spatial_dims=3,out_channels=num_seg_labels)
     if model_name=='3DSegResVAE':
@@ -101,6 +88,6 @@ def model_factory(config):
     if 'model_weight' in config and config['model_weight']: 
         print('loading weights')
         checkpoint= torch.load(config['model_weight'],map_location='cpu') 
-        new_d = remove_ddp_tags(checkpoint['state_dict'])
+        new_d = remove_ddp_tags(checkpoint['state_dict']) 
         net.load_state_dict(new_d,strict=False)
     return net 

@@ -16,7 +16,8 @@ import torch.distributed as dist
 import numpy as np 
 from torch.nn import CosineEmbeddingLoss 
 from ..helper_utils.utils import _proc3dbatch
-
+import pdb 
+from torch.nn.utils import clip_grad_norm
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
     tensor = tensor.clone() 
@@ -30,6 +31,7 @@ def train_batch(
     conf = config
     img_k = conf["img_key_name"]
     lbl_k = conf["lbl_key_name"]
+    phase_k = conf["phase"] #TODO:Make this part of the ocnfirugation and an expected
     (
         train_loader,
         val_loader,
@@ -68,7 +70,7 @@ def train_batch(
             step += 1
             inputs = inputs.to(device)
             labels = labels.to(device)
-            outputs = model(inputs)
+            mask_out,embed_pred,mask_pred = model(inputs)
             loss = loss_function(outputs, labels) 
             loss.backward()
             optimizer.step()
@@ -316,7 +318,184 @@ def train_basic_vae(model=None,train_dl=None,optis=None,criterions=None,writer=N
     epoch_loss =  epoch_loss.to(device)
     print(f" I am rank {rank} i have completed {global_step_count}")
     return epoch_loss,global_step_count
-         
+
+def train_two_branch(model=None,train_dl=None,optis=None,criterions=None,writer=None,global_step_count=None,epoch=None,conf=None):
+    img_k = conf['img_key_name'] 
+    lbl_k = conf['lbl_key_name']
+    phase_k = 'phase'
+    model.train()
+    rank = dist.get_rank() if len(conf['device'])>=2  else 0 
+    world_size = dist.get_world_size() if len(conf['device'])>=2 else 1
+    step= 0  
+    device = torch.device(f"cuda:{rank}")
+    epoch_loss = 0  
+    if epoch <=-1: 
+        confusion_lambda = 0 
+    else: 
+        confusion_lambda = 0.75
+    for batch_n,batch_data in enumerate(train_dl): 
+        print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
+        torch.cuda.empty_cache()
+        inputs, labels,phase = (batch_data[img_k], batch_data[lbl_k],batch_data[phase_k])
+        if step == 0 and epoch % 2 == 0 and rank==0:
+            help_utils.write_batches(
+                writer=writer,
+                inputs=inputs.detach(),
+                labels=labels.detach(),
+                epoch=epoch,
+                dset='train',
+                config=conf
+            ) 
+        for e in optis: 
+            optis[e].zero_grad() 
+        step +=1 
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        has_kidney = (labels.sum(1).sum(1).sum(1).sum(1) !=0).to(torch.int)
+        phase = phase.to(device) 
+        #train the segmentation. entire unet structure
+        seg_pred,embed_domain_pred,mask_domain_pred= model(inputs) 
+        seg_loss = criterions['task'](seg_pred,labels)
+        embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
+        mask_domain_loss = (criterions['domain'](mask_domain_pred,phase)*has_kidney).mean()
+        total_loss = seg_loss + 0.0*embed_domain_loss + 0.0*mask_domain_loss  #we need the loss to be included in calculation for DDP but grad can be zero
+        total_loss.backward() 
+        optis['task'].step()   
+        #train the discriminators.
+        seg_pred,embed_domain_pred,mask_domain_pred= model(inputs) 
+        seg_loss = criterions['task'](seg_pred,labels)
+        embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
+        mask_domain_loss = (criterions['domain'](mask_domain_pred,phase)*has_kidney).mean()
+        domain_loss =  0.5*embed_domain_loss + 0.5*mask_domain_loss 
+        total_loss =  0.0*seg_loss + domain_loss  #ddp based clipping. if not included you will suffer
+        total_loss.backward()
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        optis['domain'].step() 
+        for e in optis: 
+            optis[e].zero_grad() 
+        #penalize the  entire model. with seg loss and confusion loss
+        seg_pred,embed_domain_pred,mask_domain_pred= model(inputs) 
+        embed_conf_loss = torch.mean(criterions['conf'](embed_domain_pred,phase)*has_kidney)
+        mask_conf_loss = torch.mean(criterions['conf'](mask_domain_pred,phase)*has_kidney)
+        seg_loss = criterions['task'](seg_pred,labels)
+        conf_loss = confusion_lambda*( embed_conf_loss + mask_conf_loss ) 
+        new_conf_loss = conf_loss + seg_loss
+        new_conf_loss.backward() 
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        optis['confusion'].step()
+        for e in optis: 
+            optis[e].zero_grad() 
+        #aggrgate all the losses for metrics
+        total_loss =  seg_loss.detach() + domain_loss.detach() + conf_loss.detach()
+        if torch.isnan(total_loss).any():
+            pdb.set_trace()
+        epoch_loss += total_loss
+        local_loss = reduce_metrics(epoch_loss,world_size=world_size)
+        local_dice_loss = reduce_metrics(seg_loss,world_size=world_size)
+        local_domain_embed_loss = reduce_metrics(embed_domain_loss,world_size=world_size)
+        local_domain_mask_loss = reduce_metrics(mask_domain_loss,world_size=world_size)
+        local_conf_embed_loss = reduce_metrics(embed_conf_loss,world_size=world_size)
+        local_conf_mask_loss = reduce_metrics(mask_conf_loss,world_size=world_size)
+        if writer: 
+            writer.add_scalar("batch_DICE+CE_loss",local_dice_loss,global_step=global_step_count)
+            writer.add_scalar("batch_total_loss",local_loss,global_step=global_step_count)
+            writer.add_scalar("embed_domain_loss",local_domain_embed_loss,global_step=global_step_count)
+            writer.add_scalar("mask_domain_loss",local_domain_mask_loss,global_step=global_step_count) 
+            writer.add_scalar("embed_confusion_loss",local_conf_embed_loss,global_step=global_step_count)
+            writer.add_scalar("mask_confusion_loss",local_conf_mask_loss,global_step=global_step_count)
+        global_step_count += 1
+    epoch_loss /= step 
+    epoch_loss =  epoch_loss.to(device)
+    print(f" I am rank {rank} i have completed {global_step_count}")
+    return epoch_loss,global_step_count
+def train_one_branch(model=None,train_dl=None,optis=None,criterions=None,writer=None,global_step_count=None,epoch=None,conf=None):
+    img_k = conf['img_key_name'] 
+    lbl_k = conf['lbl_key_name']
+    phase_k = 'phase'
+    model.train()
+    rank = dist.get_rank() if len(conf['device'])>=2  else 0 
+    world_size = dist.get_world_size() if len(conf['device'])>=2 else 1
+    step= 0  
+    device = torch.device(f"cuda:{rank}")
+    epoch_loss = 0  
+    if epoch <0: 
+        confusion_lambda = 0 
+    else: 
+        confusion_lambda = 0.1
+    for batch_n,batch_data in enumerate(train_dl): 
+        print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
+        torch.cuda.empty_cache()
+        inputs, labels,phase = (batch_data[img_k], batch_data[lbl_k],batch_data[phase_k])
+        if step == 0 and epoch % 2 == 0 and rank==0:
+            help_utils.write_batches(
+                writer=writer,
+                inputs=inputs.detach(),
+                labels=labels.detach(),
+                epoch=epoch,
+                dset='train',
+                config=conf
+            ) 
+        for e in optis: 
+            optis[e].zero_grad() 
+        step +=1 
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        has_kidney = (labels.sum(1).sum(1).sum(1).sum(1) !=0).to(torch.int)
+        phase = phase.to(device) 
+        #train the segmentation. entire unet structure
+        seg_pred,embed_domain_pred= model(inputs) 
+        seg_loss = criterions['task'](seg_pred,labels)
+        embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
+        total_loss =  seg_loss + 0.0*embed_domain_loss #we need to do this so dataParallel doesn't yell at me
+        total_loss.backward()
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        optis['task'].step()   
+        for e in optis: 
+            optis[e].zero_grad() 
+        #train the discriminator 
+        seg_pred,embed_domain_pred= model(inputs) 
+        seg_loss = criterions['task'](seg_pred,labels)
+        embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        total_loss = 0.0*seg_loss + embed_domain_loss #block out the seg loss for ddp calcs
+        optis['domain'].step() 
+        for e in optis: 
+            optis[e].zero_grad() 
+        #penalize the discriminators only  with confusion loss
+        seg_pred,embed_domain_pred = model(inputs) 
+        embed_conf_loss = torch.mean(criterions['conf'](embed_domain_pred,phase)*has_kidney)
+        seg_loss = criterions['task'](seg_pred,labels)
+        conf_loss = ( embed_conf_loss ) 
+        new_conf_loss = confusion_lambda*(conf_loss + seg_loss)
+        new_conf_loss.backward() 
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        optis['confusion'].step()
+        for e in optis: 
+            optis[e].zero_grad() 
+        #aggrgate all the losses for metrics
+        total_loss =  seg_loss.detach() + embed_domain_loss.detach() + conf_loss.detach()
+        if torch.isnan(total_loss).any():
+            pdb.set_trace()
+        epoch_loss += total_loss
+
+        local_loss = reduce_metrics(epoch_loss,world_size=world_size)
+        local_dice_loss = reduce_metrics(seg_loss,world_size=world_size)
+        local_domain_embed_loss = reduce_metrics(embed_domain_loss,world_size=world_size)
+        local_conf_embed_loss = reduce_metrics(embed_conf_loss,world_size=world_size)
+        if writer: 
+            writer.add_scalar("batch_DICE+CE_loss",local_dice_loss,global_step=global_step_count)
+            writer.add_scalar("batch_total_loss",local_loss,global_step=global_step_count)
+            writer.add_scalar("embed_domain_loss",local_domain_embed_loss,global_step=global_step_count)
+            writer.add_scalar("embed_confusion_loss",local_conf_embed_loss,global_step=global_step_count)
+        global_step_count += 1
+    epoch_loss /= step 
+    epoch_loss =  epoch_loss.to(device)
+    print(f" I am rank {rank} i have completed {global_step_count}")
+    return epoch_loss,global_step_count
+
+def  reduce_metrics(tens,world_size): 
+    out = reduce_tensors(tensor=tens,world_size=world_size) if world_size >= 2 else tens
+    return out 
 def view_recons(model,imgs,labels,writter,epoch):
     recon = model.module.get_recon(imgs)
     out_imgs,out_lbls = _proc3dbatch(recon,labels)

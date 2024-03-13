@@ -155,7 +155,7 @@ class segResnetBias(SegResNet):
             return x, flat_vec
         else: 
             return x 
-class SegResnetBiasClassi(SegResNet):
+class SegResnetBiasClassiOneBranch(SegResNet):
     def __init__(self,         spatial_dims: int = 3,
         init_filters: int = 8,
         in_channels: int = 1,
@@ -171,7 +171,7 @@ class SegResnetBiasClassi(SegResNet):
         upsample_mode: UpsampleMode | str = UpsampleMode.NONTRAINABLE,
     ):
         super().__init__(spatial_dims=spatial_dims, init_filters=init_filters, in_channels=in_channels, out_channels=out_channels, dropout_prob=dropout_prob, act=act, norm=norm, norm_name=norm_name, num_groups=num_groups, use_conv_final=use_conv_final, blocks_down=blocks_down, blocks_up=blocks_up, upsample_mode=upsample_mode)
-        self.comp = nn.Sequential(
+        self.bottleneck_branch= nn.Sequential(
             nn.Conv3d(64,32,3,3,2),
             nn.GroupNorm(32,32,eps=0.00001,affine=True),
             nn.ReLU(),
@@ -179,20 +179,22 @@ class SegResnetBiasClassi(SegResNet):
             nn.ReLU(),
             nn.GroupNorm(16,16,eps=0.00001,affine=True),
             nn.Flatten(),
-            nn.Linear(288,144),
+            nn.Linear(432,432),
             nn.ReLU(),
-            nn.Linear(144,2),
+            nn.Linear(432,2),
         )
+        self.infer_phase=False
     def forward(self,x): 
         x, down_x = self.encode(x)
         down_x.reverse()
-        embed = self.comp(down_x[0] )
-        flat_vec = embed
+        embed = self.bottleneck_branch(down_x[0] )
         x = self.decode(x, down_x)
-        if self.training: 
-            return x, flat_vec
+        if self.training or self.infer_phase: 
+            return x, embed
         else: 
             return x 
+    def set_infer_phase(self,status=False):
+        self.infer_phase=status
 class SegResnetBiasClassiTwoBranch(SegResNet):
     def __init__(self,         spatial_dims: int = 3,
         init_filters: int = 8,
@@ -235,16 +237,19 @@ class SegResnetBiasClassiTwoBranch(SegResNet):
             nn.ReLU(),
             nn.Linear(324,2)
         )
+        self.infer_phase=False
     def forward(self,x): 
         x, down_x = self.encode(x)
         down_x.reverse()
         block_embed = self.bottleneck_branch(down_x[0])
         x = self.decode(x, down_x)
         mask_embed = self.mask_branch(x)
-        if self.training: 
+        if self.training or self.infer_phase: 
             return x, block_embed,mask_embed
         else: 
             return x 
+    def set_infer_phase(self,infer_phase=False): 
+        self.infer_phase=infer_phase 
 class SegResVAE(SegResNetVAE):
     def __init__(self, input_image_size: Sequence[int], vae_estimate_std: bool = False, vae_default_std: float = 0.3, vae_nz: int = 256, spatial_dims: int = 3, init_filters: int = 8, 
     in_channels: int = 1, out_channels: int = 2, dropout_prob: Optional[float] = None, 

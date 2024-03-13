@@ -25,7 +25,20 @@ from domainadapt_segmentation.helper_utils.utils import confusion_loss
 from torch.nn import CosineEmbeddingLoss 
 import numpy as np 
 import pdb 
-
+import torch._dynamo
+from torch.utils.data import WeightedRandomSampler
+def makeWeightedsampler(ds):
+    classes = [0, 1]
+    phase_list = [e["phase"] for e in ds]
+    cls_counts = [0, 0]
+    cls_counts[0] = len(phase_list) - sum(phase_list)
+    cls_counts[1] = sum(phase_list)
+    cls_weights = [1 / e for e in cls_counts]
+    sample_weight = list()
+    for e in phase_list:
+        sample_weight.append(cls_weights[e])
+    sample_weight = torch.tensor(sample_weight)
+    return WeightedRandomSampler(sample_weight, len(sample_weight))
 def optuna_gen(conf_in, trial):
     pass
 
@@ -60,7 +73,26 @@ def build_optimizers(model,conf=None):
     if conf['train_mode']=='consistency': 
         optim_all = optim.Adam(get_params_list(model,'all'),lr=0.1) 
         optis = {'task':optim_all}
+    if conf['train_mode']=='debias_two_branch':
+        optis = dict()  #TODO: do i just have 1 parameter or do i have a tone of parameters for this 
+        optis['task'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+        optis['domain']= optim.SGD(filter_params(model,'bottleneck_branch') + filter_params(model,'mask_branch'),lr=0.1)  
+        optis['confusion'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+    if conf['train_mode']=='debias_one_branch':
+        optis = dict()  #TODO: do i just have 1 parameter or do i have a tone of parameters for this 
+        optis['task'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+        print("filtering weights for bottleneck")
+        optis['domain']= optim.SGD(filter_params(model,'bottleneck_branch'),lr=0.1)  
+        optis['confusion'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
     return optis  
+def filter_params(model,param_pattern): 
+    param_list = list() 
+    for n,e in model.named_parameters():
+        if param_pattern in n: 
+            print(n)
+            param_list.append(e)
+    return param_list
+
 
 def my_consistency_loss(batch_lbl,flat_vec,device):
     instances = (batch_lbl.sum(axis=-1).sum(axis=-1).sum(axis=-1)>=1).to(torch.int).cpu()
@@ -94,7 +126,11 @@ def build_criterions(conf=None):
         criterions = dict() 
         criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
         criterions['consistency'] = my_consistency_loss
-
+    if conf['train_mode']=='debias_two_branch' or conf['train_mode']=='debias_one_branch':
+        criterions = dict() 
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
+        criterions['domain'] = torch.nn.CrossEntropyLoss(reduction="none")
+        criterions['conf'] = confusion_loss(reduction='none')
     return criterions
 
 def _parse():
@@ -150,6 +186,14 @@ def train_dispatch(model=None,train_dl=None,optis=None,
         epoch_loss, global_step_count = train_basic_vae(model=model,train_dl=train_dl,optis=optis,
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
                     epoch=epoch,conf=conf)
+    if train_mode =='debias_two_branch': 
+        epoch_loss, global_step_count = train_two_branch(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
+    if train_mode =='debias_one_branch': 
+        epoch_loss, global_step_count = train_one_branch(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
     return epoch_loss,global_step_count
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
@@ -189,13 +233,21 @@ def dummy_main(rank,world_size,conf):
     cache_dir = conf['cache_dir']
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
+    train_mode = conf['train_mode']
+    if train_mode=='debias_two_branch' or train_mode=='debias_one_branch':
+        print("adding two branch")
+        sampler = makeWeightedsampler(tr_part)
+        shuffle=False
+    else: 
+        sampler =None
+        shuffle=True
     num_workers = conf['num_workers']
     train_dl = DataLoader(
         tr_dset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=shuffle,
         num_workers=num_workers,
-        sampler=None,
+        sampler=sampler,
         collate_fn=help_transforms.ramonPad()
     )
     val_dl = DataLoader(
@@ -213,9 +265,10 @@ def dummy_main(rank,world_size,conf):
         include_background=True, reduction="mean", to_onehot_y=True, softmax=True
     )
     model = model.to(torch.float32).to(device)
+    #model = torch.compile(model,fullgraph=False,dynamic=True)
     if world_size >=2: 
         model = DistributedDataParallel(model,device_ids=[device])
-    #cofigs regarding model params 
+    #cofigs regarding model params, 
     batch_size = conf["batch_size"]
     cache_dir = conf["cache_dir"]
     optis = build_optimizers(model,conf=conf) 
@@ -241,7 +294,7 @@ def dummy_main(rank,world_size,conf):
     else: 
         writer = None  #TODO make sure code works with NOne writeter
     global_step_count =0  
-
+    all_d = 0 
     for epoch in range (max_epochs): 
         epoch_loss, global_step_count = train_dispatch(model=model,train_dl=train_dl,optis=optis,
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
@@ -251,31 +304,31 @@ def dummy_main(rank,world_size,conf):
         print(f"{rank} epoch loss: {epoch_loss}")
         if writer: 
             writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch) 
-            
-        all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
-        print("Done with the  eval loop")
-        dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size()) if world_size >=2 else all_d
-        loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) if world_size >=2 else all_d
-        if writer: 
-            writer.add_scalar("val_loss",loss_reduc,global_step=epoch) 
-            writer.add_scalar("val_dice",dice_reduc,global_step=epoch)
-        if all_d > best_metric and rank==0:
-            best_metric = all_d
-            best_metric_epoch = epoch + 1
-            torch.save(
-                {
-                    "conf": conf,
-                    "state_dict": model.state_dict(),
-                    "epoch": epoch,
-                },
-                os.path.join(weight_path, "best_metric_model.pth"),
-            )
-            print("saved new best metric model")
-            print(
-                f"current epoch: {epoch + 1} current mean dice: {all_d:.4f}"
-                f"\nbest mean dice: {best_metric:.4f}"
-                f" at epoch: {best_metric_epoch}"
-            )
+        if (epoch and epoch %10 ==0 )or conf['dev']==True:
+            all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
+            print("Done with the  eval loop")
+            dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size()) if world_size >=2 else all_d
+            loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) if world_size >=2 else all_d
+            if writer: 
+                writer.add_scalar("val_loss",loss_reduc,global_step=epoch) 
+                writer.add_scalar("val_dice",dice_reduc,global_step=epoch)
+            if all_d > best_metric and rank==0:
+                best_metric = all_d
+                best_metric_epoch = epoch + 1
+                torch.save(
+                    {
+                        "conf": conf,
+                        "state_dict": model.state_dict(),
+                        "epoch": epoch,
+                    },
+                    os.path.join(weight_path, "best_metric_model.pth"),
+                )
+                print("saved new best metric model")
+                print(
+                    f"current epoch: {epoch + 1} current mean dice: {all_d:.4f}"
+                    f"\nbest mean dice: {best_metric:.4f}"
+                    f" at epoch: {best_metric_epoch}"
+                )
         if rank==0 and (epoch - best_metric_epoch) > 100 and abs(best_metric - all_d) < 0.01:
             #  we will exit training  because the model has not made large useful progres sin a reasonable amount of time
             if world_size >=2: 
@@ -299,5 +352,5 @@ def setup_repro(seed):
 
 if __name__ == "__main__":
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29500"
+    os.environ["MASTER_PORT"] = "29501"
     _parse()
