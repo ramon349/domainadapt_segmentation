@@ -112,9 +112,15 @@ def test_main():
     train_conf, weights = help_utils.load_weights(weight_path=weight_path)
     model= model_factory(config=train_conf) 
     model.load_state_dict(weights)
-    with open(train_conf['data_path'],'rb' ) as f : 
-        test = pkl.load(f) 
-        test = test[-1] # TODO: DON'T KEEP THIS FOREVER 
+    if config['test_set']: 
+        print(f"Using provided test set: {config['test_set']} ")
+        with open(config['test_set'],'rb') as f: 
+            test = pkl.load(f)
+            test = test[-1] 
+    else: 
+        with open(train_conf['data_path'],'rb' ) as f : 
+            test = pkl.load(f) 
+            test = test[-1] # TODO: DON'T KEEP THIS FOREVER 
     dset = kit_factory('basic') # dset that is not cached 
     test_t = help_transforms.gen_test_transforms(confi=train_conf)
     test_ds = dset(test,transform=test_t)

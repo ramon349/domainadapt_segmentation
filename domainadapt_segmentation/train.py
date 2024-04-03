@@ -233,12 +233,12 @@ def dummy_main(rank,world_size,conf):
     cache_dir = conf['cache_dir']
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
-    train_mode = conf['train_mode']
-    if train_mode=='debias_two_branch' or train_mode=='debias_one_branch':
-        print("adding two branch")
+    if conf['balance_phases']:
+        print("PHASE BALANCE IS ENABLED")
         sampler = makeWeightedsampler(tr_part)
         shuffle=False
     else: 
+        print("PHASE BALANCE IS NOT ENABLED")
         sampler =None
         shuffle=True
     num_workers = conf['num_workers']
@@ -260,6 +260,14 @@ def dummy_main(rank,world_size,conf):
     device = torch.device(f"cuda:{rank}")
     torch.cuda.set_device(device) 
     #load the model 
+    if conf['resume'] ==True: 
+        log_path = help_utils.figure_version(
+            conf["log_dir"],load_past=conf['resume']
+        )  # TODO think about how you could perhaps continue training
+        weight_path =log_path 
+        old_weight_path = os.path.join(weight_path, "best_metric_model.pth")
+        conf['model_weigth'] = old_weight_path 
+
     model = model_factory(config=conf)
     loss_function = DiceCELoss(
         include_background=True, reduction="mean", to_onehot_y=True, softmax=True
@@ -281,9 +289,10 @@ def dummy_main(rank,world_size,conf):
     max_epochs = conf['epochs']
     best_metric =0 
     best_metric_epoch =0 
+
     if m_rank ==0: 
         log_path = help_utils.figure_version(
-            conf["log_dir"]
+            conf["log_dir"],load_past=conf['resume']
         )  # TODO think about how you could perhaps continue training
         weight_path =log_path 
         if not os.path.isdir(weight_path):

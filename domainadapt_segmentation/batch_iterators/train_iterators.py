@@ -329,7 +329,7 @@ def train_two_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
     step= 0  
     device = torch.device(f"cuda:{rank}")
     epoch_loss = 0  
-    if epoch <=-1: 
+    if epoch <200:  #TODO: make this a configuration item
         confusion_lambda = 0 
     else: 
         confusion_lambda = 0.75
@@ -366,7 +366,7 @@ def train_two_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
         seg_loss = criterions['task'](seg_pred,labels)
         embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
         mask_domain_loss = (criterions['domain'](mask_domain_pred,phase)*has_kidney).mean()
-        domain_loss =  0.5*embed_domain_loss + 0.5*mask_domain_loss 
+        domain_loss =  embed_domain_loss + mask_domain_loss 
         total_loss =  0.0*seg_loss + domain_loss  #ddp based clipping. if not included you will suffer
         total_loss.backward()
         clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
@@ -418,7 +418,7 @@ def train_one_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
     step= 0  
     device = torch.device(f"cuda:{rank}")
     epoch_loss = 0  
-    if epoch <0: 
+    if epoch <200: 
         confusion_lambda = 0 
     else: 
         confusion_lambda = 0.1
@@ -458,6 +458,7 @@ def train_one_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
         embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
         clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
         total_loss = 0.0*seg_loss + embed_domain_loss #block out the seg loss for ddp calcs
+        total_loss.backward()
         optis['domain'].step() 
         for e in optis: 
             optis[e].zero_grad() 
@@ -467,7 +468,7 @@ def train_one_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
         seg_loss = criterions['task'](seg_pred,labels)
         conf_loss = ( embed_conf_loss ) 
         new_conf_loss = confusion_lambda*(conf_loss + seg_loss)
-        new_conf_loss.backward() 
+        new_conf_loss.backward()   
         clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
         optis['confusion'].step()
         for e in optis: 

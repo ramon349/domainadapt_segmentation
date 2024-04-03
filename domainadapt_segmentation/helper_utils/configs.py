@@ -165,6 +165,8 @@ def build_args():
     parser.add_argument('--seed',type=int,default=349)
     parser.add_argument("--resize_size",type=json.loads,required=False)
     parser.add_argument("--model_weight",type=str,required=False)
+    parser.add_argument("--balance_phases",type=parse_bool,required=False,default=False)
+    parser.add_argument("--resume",type=parse_bool,required=False,default=False)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)
@@ -182,6 +184,7 @@ def build_test_args():
     parser.add_argument('--output_dir',required=True)
     parser.add_argument('--device',default='cuda:0',required=False)
     parser.add_argument("--metrics_path",required=True )
+    parser.add_argument("--test_set",type=str,required=False,default=False)
     return parser
 def build_infer_args(): 
     parser = argparse.ArgumentParser(
