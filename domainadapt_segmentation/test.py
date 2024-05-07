@@ -42,6 +42,7 @@ def make_post_transforms(test_conf,test_transforms):
                 keys="pred",
                 transform=test_transforms,
                 orig_keys="image",
+                orig_meta_keys ='image_meta_dict',
                 meta_keys="pred_meta_dict",
                 meta_key_postfix="meta_dict",
                 nearest_interp=False,
@@ -51,12 +52,13 @@ def make_post_transforms(test_conf,test_transforms):
             RemoveSmallObjectsd(keys="pred", min_size=500),
             SaveImaged(
                 keys="pred",
-                meta_keys="image",
+                meta_keys="pred_meta_dict",
                 output_dir=out_dir,
                 output_postfix="seg",
                 resample=False,
                 data_root_dir="",
-                output_name_formatter=subject_formater
+                output_name_formatter=subject_formater,
+                savepath_in_metadict=True
             ),
         ]
     )

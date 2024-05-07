@@ -52,8 +52,9 @@ def infer_loop(model, loader,  config,post_transform=None):
                 sw_batch_size=1,
                 predictor=model,
             )
-            [post_transform(i) for i in decollate_batch(val_data)]
+            out_meta = post_transform(decollate_batch(val_data)[0])
             img_path.append(val_data['image_meta_dict']['filename_or_obj'])
+    return img_path
 
 def infer_main():
     config = help_configs.get_infer_params() 
@@ -68,7 +69,7 @@ def infer_main():
         test = pkl.load(f) 
         test = test[-1] # TODO: DON'T KEEP THIS FOREVER 
     dset = kit_factory('basic') # dset that is not cached 
-    test_t = help_transforms.gen_test_transforms(confi=train_conf)
+    test_t = help_transforms.gen_test_transforms(confi=train_conf,mode='infer')
     test_ds = dset(test,transform=test_t)
     test_loader = DataLoader(test_ds,
     batch_size = 1,
@@ -78,7 +79,8 @@ def infer_main():
     model = model.to(device=device)
     model.eval() 
     post_transform = make_post_transforms(config,test_transforms=test_t)
-    roi_size = (96,96,32)# train_conf['spacing_vox_dim']
+    roi_size = train_conf['spacing_vox_dim']
+    train_conf['device'] = device
     sw_batch_size=  1 
     with torch.no_grad(): 
        outs = infer_loop(model,test_loader,config=train_conf,post_transform=post_transform)

@@ -27,6 +27,8 @@ import numpy as np
 import pdb 
 import torch._dynamo
 from torch.utils.data import WeightedRandomSampler
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 def makeWeightedsampler(ds):
     classes = [0, 1]
     phase_list = [e["phase"] for e in ds]
@@ -84,6 +86,11 @@ def build_optimizers(model,conf=None):
         print("filtering weights for bottleneck")
         optis['domain']= optim.SGD(filter_params(model,'bottleneck_branch'),lr=0.1)  
         optis['confusion'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+    if conf['train_mode']=='debias_one_branch_adv':
+        optis = dict()  #TODO: do i just have 1 parameter or do i have a tone of parameters for this 
+        optis['task'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+        optis['domain']= optim.SGD(filter_params(model,'bottleneck_branch'),lr=0.1)  
+        optis['all'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
     return optis  
 def filter_params(model,param_pattern): 
     param_list = list() 
@@ -161,7 +168,7 @@ def _parse():
         for e in gpus: 
             print(e.split(':'))
         device_nums = [e.split(':')[1] for e in gpus]
-        os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
+        #os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
         if world_size==1: 
             print('we are not doing parallel')
@@ -202,37 +209,40 @@ def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2):
     tensor.div(world_size) 
     return tensor
 def dummy_main(rank,world_size,conf):
-    print(f"Hello I am procees {rank} out of {world_size}")
-    print(f"Process {rank} has {torch.cuda.device_count()} gpus avaialble") 
+    """ This is the actual main function used during training 
+    rank: is the rank order in distributed training. On local training it defaults to 0 
+    world_size: is the number of gpus being used. On local mode it is defaulted to 1 
+    """
     seed = conf['seed']
     setup_repro(seed)
     if world_size >=2:
-        dist.init_process_group(backend='nccl',rank=rank,world_size=world_size,init_method="env://") 
+        dist.init_process_group(backend='nccl',rank=rank,world_size=world_size,init_method="env://")  #this init method was suggested by tutorials on monai
         m_rank = dist.get_rank() 
     else: 
         m_rank = 0 
+    print(f"I am ran {m_rank} and i am starting")
     #here we set up the partitioning of the training data across all the workers 
     ##SETUP ALL THE DATASET RELATED ITEMS 
     train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries 
-    # use short circuitting to check if dev is  a field
     if "dev" in conf.keys() and conf["dev"] == True:
-        print(
-            "we are outputting to devset we are therefore using a smaller train sample for dev"
-        )
         train = random.sample(train, 20)
         val = random.sample(val, 20)
     train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
     if world_size >=2: 
-        tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False) [dist.get_rank()] # this will create a dataset  for each partion 
-        val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=False)[dist.get_rank()] 
+        #each  gpu will be it's own process and will therefore see a different subset of the data
+        tr_part = partition_dataset(train,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=True,drop_last=False) [dist.get_rank()] # this will create a dataset  for each partion 
+        val_part = partition_dataset(val,num_partitions=dist.get_world_size(),shuffle=False,even_divisible=True,drop_last=False)[dist.get_rank()] 
     else: 
         tr_part  = train 
-        val_part = val  
-    dset = kit_factory('cached')
+        val_part = val   
+    dset = kit_factory('cached') #i do caching when i shouldn't
     batch_size = conf['batch_size']
     cache_dir = conf['cache_dir']
+    #tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
+    #val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
+    print(f"I am rank: {m_rank} i have {len(tr_part)} elements in my train set")
     if conf['balance_phases']:
         print("PHASE BALANCE IS ENABLED")
         sampler = makeWeightedsampler(tr_part)
@@ -256,24 +266,16 @@ def dummy_main(rank,world_size,conf):
         shuffle=False,
         num_workers=num_workers,
         collate_fn=help_transforms.ramonPad()
-    )
-    device = torch.device(f"cuda:{rank}")
+    ) 
+    cuda_str = conf['device'][rank]
+    device = torch.device(cuda_str)
     torch.cuda.set_device(device) 
-    #load the model 
-    if conf['resume'] ==True: 
-        log_path = help_utils.figure_version(
-            conf["log_dir"],load_past=conf['resume']
-        )  # TODO think about how you could perhaps continue training
-        weight_path =log_path 
-        old_weight_path = os.path.join(weight_path, "best_metric_model.pth")
-        conf['model_weigth'] = old_weight_path 
 
     model = model_factory(config=conf)
     loss_function = DiceCELoss(
         include_background=True, reduction="mean", to_onehot_y=True, softmax=True
     )
-    model = model.to(torch.float32).to(device)
-    #model = torch.compile(model,fullgraph=False,dynamic=True)
+    model = model.to(device)
     if world_size >=2: 
         model = DistributedDataParallel(model,device_ids=[device])
     #cofigs regarding model params, 
@@ -315,7 +317,7 @@ def dummy_main(rank,world_size,conf):
             writer.add_scalar("epoch_loss", epoch_loss, global_step=epoch) 
         if (epoch and epoch %10 ==0 )or conf['dev']==True:
             all_d,all_l = eval_loop(model,val_dl,writer,epoch,device=device,config=conf) 
-            print("Done with the  eval loop")
+            print("{rank} Done with the  eval loop")
             dice_reduc = reduce_tensors(all_d,world_size=dist.get_world_size()) if world_size >=2 else all_d
             loss_reduc = reduce_tensors(all_l,world_size=dist.get_world_size()) if world_size >=2 else all_d
             if writer: 
@@ -341,7 +343,7 @@ def dummy_main(rank,world_size,conf):
         if rank==0 and (epoch - best_metric_epoch) > 100 and abs(best_metric - all_d) < 0.01:
             #  we will exit training  because the model has not made large useful progres sin a reasonable amount of time
             if world_size >=2: 
-                print(f"Killign training due to insufficient progress")
+                print(f"Killing training due to insufficient progress")
                 dist.destroy_process_group()
             break
     if world_size>=2:  

@@ -195,6 +195,23 @@ class SegResnetBiasClassiOneBranch(SegResNet):
             return x 
     def set_infer_phase(self,status=False):
         self.infer_phase=status
+class SegResnetBiasClassiOneBranchAdv(SegResnetBiasClassiOneBranch):
+    def __init__(self, spatial_dims: int = 3, init_filters: int = 8, in_channels: int = 1, out_channels: int = 2, dropout_prob: float | None = None, act: tuple | str = ("RELU", { "inplace": True }), norm: tuple | str = ("GROUP", { "num_groups": 8 }), norm_name: str = "", num_groups: int = 8, use_conv_final: bool = True, blocks_down: tuple = (1, 2, 2, 4), blocks_up: tuple = (1, 1, 1), upsample_mode: UpsampleMode | str = UpsampleMode.NONTRAINABLE):
+        super().__init__(spatial_dims, init_filters, in_channels, out_channels, dropout_prob, act, norm, norm_name, num_groups, use_conv_final, blocks_down, blocks_up, upsample_mode)
+        self.debias = False
+    def forward(self, x): 
+        x, down_x = self.encode(x)
+        down_x.reverse()
+        if self.training and self.debias:
+            embed = self.bottleneck_branch( grad_reverse(down_x[0] ))
+        else: 
+            embed = self.bottleneck_branch( grad_reverse(down_x[0] ))
+        x = self.decode(x, down_x)
+        if self.training or self.infer_phase: 
+            return x, embed
+        else: 
+            return x 
+        return super().forward(x)
 class SegResnetBiasClassiTwoBranch(SegResNet):
     def __init__(self,         spatial_dims: int = 3,
         init_filters: int = 8,

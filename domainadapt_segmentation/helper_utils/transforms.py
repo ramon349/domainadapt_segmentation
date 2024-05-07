@@ -153,10 +153,12 @@ def gen_transforms(confi):
     return train_transform, val_transform
 
 
-def gen_test_transforms(confi):
+def gen_test_transforms(confi,mode='test'):
     my_transforms = list() 
     for e in confi['test_transforms']:
-        l_transform = get_transform(e,confi,mode='test')
+        if e =='labelMask' and mode=='infer':
+            continue 
+        l_transform = get_transform(e,confi,mode=mode)
         print(l_transform)
         my_transforms.append(l_transform)
     val_transform = Compose(my_transforms) #Compose([get_transform(e, confi) for e in confi["test_transforms"]])

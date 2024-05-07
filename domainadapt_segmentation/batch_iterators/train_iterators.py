@@ -18,6 +18,7 @@ from torch.nn import CosineEmbeddingLoss
 from ..helper_utils.utils import _proc3dbatch
 import pdb 
 from torch.nn.utils import clip_grad_norm
+from copy import deepcopy 
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
     tensor = tensor.clone() 
@@ -50,11 +51,9 @@ def train_batch(
         os.makedirs(log_path)
     writer = SummaryWriter(log_path)
     for epoch in range(max_epochs):
-        print(f"epoch {epoch + 1}/{max_epochs}")
         model.train()
         epoch_loss = 0
         step = 0
-        print("activating the data loader")
         for batch_data in tqdm(train_loader, total=len(train_loader)):
             inputs, labels = (batch_data[img_k], batch_data[lbl_k])
             if step == 0 and epoch % 2 == 0:
@@ -114,7 +113,7 @@ def eval_loop(model, loader, writer, epoch, device, config):
     img_k = config["img_key_name"]
     lbl_k = config["lbl_key_name"]
     num_seg_labels = config["num_seg_labels"]
-    metric = DiceMetric(include_background=False,reduction="mean")
+    metric = DiceMetric(include_background=False,reduction="mean_batch")
     model.eval()
     loss_function = DiceLoss(include_background=False,reduction="mean",to_onehot_y=True,sigmoid=True)
     all_losses = list()
@@ -153,7 +152,7 @@ def eval_loop(model, loader, writer, epoch, device, config):
                         is_eval=True
                     ) 
             metric(y_pred=val_outputs, y=val_labels)
-            metric_val= metric.aggregate("mean_batch")
+            metric_val= metric.aggregate(reduction="mean_batch")
             dice_scores.extend(metric_val)
             all_losses.append(loss)
             _step +=1 
@@ -222,7 +221,6 @@ def train_consistency(model=None,train_dl=None,optis=None,criterions=None,writer
     epoch_loss =  epoch_loss.to(device)
     print(f" I am rank {rank} i have completed {global_step_count}")
     return epoch_loss,global_step_count
-
 def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,global_step_count=None,epoch=None,conf=None):
     img_k = conf['img_key_name'] 
     lbl_k = conf['lbl_key_name']
@@ -233,8 +231,8 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
     device = torch.device(f"cuda:{rank}")
     epoch_loss = 0  
     for batch_n,batch_data in enumerate(train_dl): 
-        print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
-        inputs, labels = (batch_data[img_k], batch_data[lbl_k])
+        #print(f"{rank} is on batch: {batch_n} using GPU {device}") 
+        inputs, labels = (deepcopy(batch_data[img_k]), deepcopy(batch_data[lbl_k]) )
         if step == 0 and epoch % 2 == 0 and rank==0:
             help_utils.write_batches(
                 writer=writer,
@@ -332,7 +330,7 @@ def train_two_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
     if epoch <200:  #TODO: make this a configuration item
         confusion_lambda = 0 
     else: 
-        confusion_lambda = 0.75
+        confusion_lambda = 0.1
     for batch_n,batch_data in enumerate(train_dl): 
         print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
         torch.cuda.empty_cache()
@@ -387,8 +385,8 @@ def train_two_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
             optis[e].zero_grad() 
         #aggrgate all the losses for metrics
         total_loss =  seg_loss.detach() + domain_loss.detach() + conf_loss.detach()
-        if torch.isnan(total_loss).any():
-            pdb.set_trace()
+        #if torch.isnan(total_loss).any():
+        #    pdb.set_trace()
         epoch_loss += total_loss
         local_loss = reduce_metrics(epoch_loss,world_size=world_size)
         local_dice_loss = reduce_metrics(seg_loss,world_size=world_size)
@@ -471,6 +469,93 @@ def train_one_branch(model=None,train_dl=None,optis=None,criterions=None,writer=
         new_conf_loss.backward()   
         clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
         optis['confusion'].step()
+        for e in optis: 
+            optis[e].zero_grad() 
+        #aggrgate all the losses for metrics
+        total_loss =  seg_loss.detach() + embed_domain_loss.detach() + conf_loss.detach()
+        if torch.isnan(total_loss).any():
+            pdb.set_trace()
+        epoch_loss += total_loss
+
+        local_loss = reduce_metrics(epoch_loss,world_size=world_size)
+        local_dice_loss = reduce_metrics(seg_loss,world_size=world_size)
+        local_domain_embed_loss = reduce_metrics(embed_domain_loss,world_size=world_size)
+        local_conf_embed_loss = reduce_metrics(embed_conf_loss,world_size=world_size)
+        if writer: 
+            writer.add_scalar("batch_DICE+CE_loss",local_dice_loss,global_step=global_step_count)
+            writer.add_scalar("batch_total_loss",local_loss,global_step=global_step_count)
+            writer.add_scalar("embed_domain_loss",local_domain_embed_loss,global_step=global_step_count)
+            writer.add_scalar("embed_confusion_loss",local_conf_embed_loss,global_step=global_step_count)
+        global_step_count += 1
+    epoch_loss /= step 
+    epoch_loss =  epoch_loss.to(device)
+    print(f" I am rank {rank} i have completed {global_step_count}")
+    return epoch_loss,global_step_count
+def train_one_branch_adv(model=None,train_dl=None,optis=None,criterions=None,writer=None,global_step_count=None,epoch=None,conf=None):
+    img_k = conf['img_key_name'] 
+    lbl_k = conf['lbl_key_name']
+    phase_k = 'phase'
+    model.train()
+    rank = dist.get_rank() if len(conf['device'])>=2  else 0 
+    world_size = dist.get_world_size() if len(conf['device'])>=2 else 1
+    step= 0  
+    device = torch.device(f"cuda:{rank}")
+    epoch_loss = 0  
+    if epoch <200: 
+        confusion_lambda = 0 
+    else: 
+        confusion_lambda = 0.1
+    for batch_n,batch_data in enumerate(train_dl): 
+        print(f"{rank} is on batch: {batch_n} using GPU {device}",end='\r') 
+        torch.cuda.empty_cache()
+        inputs, labels,phase = (batch_data[img_k], batch_data[lbl_k],batch_data[phase_k])
+        if step == 0 and epoch % 2 == 0 and rank==0:
+            help_utils.write_batches(
+                writer=writer,
+                inputs=inputs.detach(),
+                labels=labels.detach(),
+                epoch=epoch,
+                dset='train',
+                config=conf
+            ) 
+        for e in optis: 
+            optis[e].zero_grad() 
+        step +=1 
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+        has_kidney = (labels.sum(1).sum(1).sum(1).sum(1) !=0).to(torch.int)
+        phase = phase.to(device) 
+        #train the segmentation. entire unet structure
+        seg_pred,embed_domain_pred= model(inputs) 
+        seg_loss = criterions['task'](seg_pred,labels)
+        embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
+        total_loss =  seg_loss + 0.0*embed_domain_loss #we need to do this so dataParallel doesn't yell at me
+        total_loss.backward()
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        optis['task'].step()   
+        for e in optis: 
+            optis[e].zero_grad() 
+        #train the discriminator 
+        model.debias = False
+        seg_pred,embed_domain_pred= model(inputs) 
+        seg_loss = criterions['task'](seg_pred,labels)
+        embed_domain_loss = (criterions['domain'](embed_domain_pred,phase)*has_kidney).mean()
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        total_loss = 0.0*seg_loss + embed_domain_loss #block out the seg loss for ddp calcs
+        total_loss.backward()
+        optis['domain'].step() 
+        for e in optis: 
+            optis[e].zero_grad() 
+        #penalize the discriminators only  with confusion loss
+        model.debias = True
+        seg_pred,embed_domain_pred = model(inputs) 
+        embed_conf_loss = torch.mean(criterions['domain'](embed_domain_pred,phase)*has_kidney)
+        seg_loss = criterions['task'](seg_pred,labels)
+        conf_loss = ( embed_conf_loss ) 
+        new_conf_loss = confusion_lambda*(conf_loss + seg_loss)
+        new_conf_loss.backward()   
+        clip_grad_norm(model.parameters(),max_norm=2.0,norm_type=2.0)
+        optis['all'].step()
         for e in optis: 
             optis[e].zero_grad() 
         #aggrgate all the losses for metrics
