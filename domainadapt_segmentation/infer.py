@@ -56,14 +56,26 @@ def infer_loop(model, loader,  config,post_transform=None):
             img_path.append(val_data['image_meta_dict']['filename_or_obj'])
     return img_path
 
+from collections import OrderedDict 
+import re 
 def infer_main():
+    name_pairs= [
+         "model.1.submodule.1.submodule.1.submodule.1.submodule.1.conv.unit0.conv.weight",
+    ]
     config = help_configs.get_infer_params() 
     weight_path = config['model_weight'] 
     output_dir = config['output_dir']
     device= config['device']
     train_conf, weights = help_utils.load_weights(weight_path=weight_path)
+    my_w = OrderedDict()
+    for k,v in weights.items():
+        new_name =re.sub('sub(\d)','submodule.\\1',k,)
+        new_name = new_name.replace('subconv','conv')
+        new_name = new_name.replace('subresidual','residual')
+        #new_name = re.sub('\d.conv.unit0.conv','conv.unit0.conv',new_name)
+        my_w[new_name] = v 
     model= model_factory(config=train_conf) 
-    model.load_state_dict(weights)
+    model.load_state_dict(my_w)
 
     with open(config['pkl_path'],'rb' ) as f : 
         test = pkl.load(f) 

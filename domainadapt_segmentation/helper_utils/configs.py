@@ -81,7 +81,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale","3DSegRes","3DSegResBias","3DSegResVAE","3DSegResBiasClassTwo","3DSegResBiasClassOne"],
+        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale","3DSegRes","3DSegResBias","3DSegResVAE","3DSegResBiasClassTwo","3DSegResBiasClassOne","3DSegResBiasClassOneAdv"],
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")
@@ -158,7 +158,7 @@ def build_args():
         "--train_mode",
         type=str,
         required=True,
-        choices=["vanilla", "debias", "dinsdale","mixed","consistency",'vae',"debias_two_branch","debias_one_branch"],
+        choices=["vanilla", "debias", "dinsdale","mixed","consistency",'vae',"debias_two_branch","debias_one_branch",'debias_one_branch_adv'],
     )
     parser.add_argument("--log_dir", type=str, required=True) 
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])

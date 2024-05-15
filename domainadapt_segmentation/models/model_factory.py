@@ -3,7 +3,7 @@ from monai.networks.nets.unet import Unet as monaiUNet
 from monai.networks.nets.segresnet import SegResNet,SegResNetVAE 
 from .dinsdale import RamenDinsdale2D
 from .dinsdale import UNet as Dinsdale2DUnet
-from .ramenUnet import segResnetBias,SegResnetBiasClassiOneBranch,SegResnetBiasClassiTwoBranch,SegResVAE
+from .ramenUnet import segResnetBias,SegResnetBiasClassiOneBranch,SegResnetBiasClassiTwoBranch,SegResVAE,SegResnetBiasClassiOneBranchAdv
 import pdb 
 import torch 
 from collections import OrderedDict 
@@ -85,6 +85,8 @@ def model_factory(config):
         net =  SegResnetBiasClassiTwoBranch(spatial_dims=3,out_channels=num_seg_labels)
     if model_name=='3DSegResVAE':
         net = SegResVAE(input_image_size=(128,128,128),spatial_dims=3,vae_estimate_std=True)
+    if model_name=='3DSegResBiasClassOneAdv':
+        net = SegResnetBiasClassiOneBranchAdv(spatial_dims=3,out_channels=num_seg_labels)
     if 'model_weight' in config and config['model_weight']: 
         print('loading weights')
         checkpoint= torch.load(config['model_weight'],map_location='cpu') 

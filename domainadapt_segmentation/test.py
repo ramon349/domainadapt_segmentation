@@ -29,6 +29,8 @@ import numpy as np
 import os 
 import pdb 
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 def subject_formater(metadict,self):
     pid = metadict['filename_or_obj']
     out_form=sha224(pid.encode('utf-8')).hexdigest()
@@ -130,7 +132,7 @@ def test_main():
     test_loader = DataLoader(test_ds,
         batch_size = 1,
         shuffle=False,
-        num_workers = 8,
+        num_workers = 16,
         collate_fn = help_transforms.ramonPad())
     model = model.to(device=device)
     model.eval() 

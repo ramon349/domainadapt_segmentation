@@ -138,6 +138,10 @@ def build_criterions(conf=None):
         criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
         criterions['domain'] = torch.nn.CrossEntropyLoss(reduction="none")
         criterions['conf'] = confusion_loss(reduction='none')
+    if conf['train_mode'] =='debias_one_branch_adv':
+        criterions = dict() 
+        criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
+        criterions['domain'] = torch.nn.CrossEntropyLoss(reduction="none")
     return criterions
 
 def _parse():
@@ -199,6 +203,10 @@ def train_dispatch(model=None,train_dl=None,optis=None,
                     epoch=epoch,conf=conf)
     if train_mode =='debias_one_branch': 
         epoch_loss, global_step_count = train_one_branch(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
+    if train_mode =='debias_one_branch_adv': 
+        epoch_loss, global_step_count = train_one_branch_adv(model=model,train_dl=train_dl,optis=optis,
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
                     epoch=epoch,conf=conf)
     return epoch_loss,global_step_count
