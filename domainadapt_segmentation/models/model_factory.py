@@ -9,6 +9,34 @@ import torch
 from collections import OrderedDict 
 from ..helper_utils.utils import remove_ddp_tags
 import pdb 
+
+
+class ModelRegister: 
+    __data = {}
+    @staticmethod
+    def __models():
+        if not hasattr(ModelRegister,'_data'):
+            ModelRegister._data = {} 
+        return ModelRegister._data 
+    @classmethod
+    def register(cls,cls_name=None):
+        def decorator(cls_obj):
+            cls.__data[cls_name]=cls_obj
+            return cls_obj
+        return decorator
+    @classmethod
+    def get_model(cls,key):
+        return cls.__data[key]
+    @classmethod
+    def num_models(cls):
+        return len(cls.__data)
+    @classmethod
+    def get_models(cls):
+        return cls.__data.keys()
+
+def model_loader(model_name):
+    return ModelRegister.get_model(model_name)()
+
 def get_kernels_strides(patch_size,spacing):
     """
     This function is only used for decathlon datasets with the provided patch sizes.
@@ -44,49 +72,8 @@ def get_kernels_strides(patch_size,spacing):
 def model_factory(config):
     model_name = config["model"]
     num_seg_labels = config["num_seg_labels"]
-    if model_name=='unet':
-        net =  monaiUNet(
-            spatial_dims=3,
-            in_channels=1,
-            out_channels=num_seg_labels,
-            channels=(16, 32, 64, 128, 256, 512),
-            strides=(2, 2, 2, 2, 2),
-            num_res_units=2,
-            act="LEAKYRELU",
-        )
-    if model_name == "2DUnet":
-        net = DynUNet(
-            spatial_dims=2,
-            in_channels=1,
-            out_channels=num_seg_labels,
-            channels=(16, 32, 64, 128, 256, 512),
-            strides=(2, 2, 2, 2, 2),
-            num_res_units=2,
-            act="LEAKYRELU",
-        )
-    if model_name =='3DUnet':
-        kernels,strides = get_kernels_strides(config['spacing_vox_dim'],config['spacing_pix_dim'])
-        net = monaiUNet(spatial_dims=3,in_channels=1,out_channels=config['num_seg_labels'],  channels=(16, 32, 64, 128, 256, 512),
-            strides=(2, 2, 2, 2, 2),
-            num_res_units=2,
-            act="LEAKYRELU",
-        )
-    if model_name=='2DDinsdaleUnet':
-        net = Dinsdale2DUnet(1,2)
-    if model_name=='2DRamenDinsdale':
-        net = RamenDinsdale2D(1,2)
-    if model_name=='3DSegRes':
-        net = SegResNet(spatial_dims=3,in_channels=1,out_channels=num_seg_labels)
-    if model_name =='3DSegResBias':
-        net = segResnetBias(spatial_dims=3,out_channels=num_seg_labels)
-    if model_name=='3DSegResBiasClassOne':
-        net = SegResnetBiasClassiOneBranch(spatial_dims=3,out_channels=num_seg_labels)
-    if model_name=='3DSegResBiasClassTwo':
-        net =  SegResnetBiasClassiTwoBranch(spatial_dims=3,out_channels=num_seg_labels)
-    if model_name=='3DSegResVAE':
-        net = SegResVAE(input_image_size=(128,128,128),spatial_dims=3,vae_estimate_std=True)
-    if model_name=='3DSegResBiasClassOneAdv':
-        net = SegResnetBiasClassiOneBranchAdv(spatial_dims=3,out_channels=num_seg_labels)
+    model_func = ModelRegister.get_model(model_name) 
+    net = model_func(spatial_dims=3,in_channels=1,out_channels=num_seg_labels)
     if 'model_weight' in config and config['model_weight']: 
         print('loading weights')
         checkpoint= torch.load(config['model_weight'],map_location='cpu') 

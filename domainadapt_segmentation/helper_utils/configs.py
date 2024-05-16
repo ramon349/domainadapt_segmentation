@@ -4,7 +4,11 @@ from collections import (
     deque,
 )  # just for fun using dequeue instead of just a list for faster appends
 from pprint import pprint
+from ..models.model_factory import ModelRegister 
 
+
+def get_model_options(): 
+    return list(ModelRegister.get_models())
 
 class LoadFromFile(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -81,7 +85,7 @@ def build_args():
         "--model",
         required=True,
         type=str,
-        choices=["2DUnet","3DUnet","2DDinsdaleUnet","2DRamenDinsdale","3DSegRes","3DSegResBias","3DSegResVAE","3DSegResBiasClassTwo","3DSegResBiasClassOne","3DSegResBiasClassOneAdv"],
+        choices=get_model_options(),
         help="Name of model to be used ",
     )
     parser.add_argument("--epochs", required=True, type=int, help="")
