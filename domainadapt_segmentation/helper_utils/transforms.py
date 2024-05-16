@@ -16,7 +16,6 @@ from monai.transforms import (
     SqueezeDimd,
     Resized,
     SpatialPad,
-    Activations,
 )
 from monai.data import NibabelReader
 import torch
