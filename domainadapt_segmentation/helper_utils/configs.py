@@ -5,10 +5,12 @@ from collections import (
 )  # just for fun using dequeue instead of just a list for faster appends
 from pprint import pprint
 from ..models.model_factory import ModelRegister 
-
+from ..batch_iterators.trainer_factory import TrainerRegister
 
 def get_model_options(): 
     return list(ModelRegister.get_models())
+def get_trainer_options():
+    return list(TrainerRegister.get_models())
 
 class LoadFromFile(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -74,6 +76,13 @@ def build_args():
         required=True,
         type=float,
         help="Initial Learning rate of our model ",
+    )
+    parser.add_argument(
+        "--trainer",
+        required=True,
+        type=float,
+        choices=get_trainer_options(),
+        help='Trainer to use '
     )
     parser.add_argument(
         "--momentum",

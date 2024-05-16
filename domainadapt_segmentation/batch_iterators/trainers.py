@@ -14,6 +14,9 @@ import os
 from ..helper_utils.utils  import confusion_loss 
 from torch.nn.utils import clip_grad_norm
 import pdb 
+from .trainer_factory import TrainerRegister 
+
+@TrainerRegister.register("DiceTrainer")
 class DiceTrainer(object):
     def __init__(self,model,device='cuda:0',tb_writter=None,conf=None,data_loaders=None):
         self.model=model
@@ -125,6 +128,7 @@ class DiceTrainer(object):
             },f=w_path
         )
 
+@TrainerRegister.register("OneBranchConf")
 class OneBranchTrainer(DiceTrainer):
     def __init__(self, model, device='cuda:0', tb_writter=None, conf=None, data_loaders=None):
         super().__init__(model, device, tb_writter, conf, data_loaders) 
@@ -213,6 +217,7 @@ class OneBranchTrainer(DiceTrainer):
         epoch_loss =  epoch_loss.to(self.device)
         return epoch_loss,global_step_count
     
+@TrainerRegister.register("OneBranchConfBad")
 class OneBranchTrainerBad(OneBranchTrainer):
     def __init__(self, model, device='cuda:0', tb_writter=None, conf=None, data_loaders=None):
         super().__init__(model, device, tb_writter, conf, data_loaders)
