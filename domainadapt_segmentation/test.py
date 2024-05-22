@@ -21,7 +21,7 @@ from monai.transforms import (
     AsDiscreted,
     Activations
 )
-from monai.transforms import Invertd, SaveImaged, RemoveSmallObjectsd
+from monai.transforms import Invertd, SaveImaged, RemoveSmallObjectsd,SplitDimd
 from hashlib import sha224
 import pandas as pd 
 from monai.metrics import DiceMetric 
@@ -31,10 +31,15 @@ import pdb
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
-def subject_formater(metadict,self):
-    pid = metadict['filename_or_obj']
-    out_form=sha224(pid.encode('utf-8')).hexdigest()
-    return {'subject':f"{out_form}","idx":"0"}
+def subject_formater(metadict,self=None):
+    if type(metadict) == dict: 
+        pid = metadict['filename_or_obj']
+        out_form=sha224(pid.encode('utf-8')).hexdigest()
+        return {'subject':f"{out_form}","idx":"0"}
+    if type(metadict) ==str: 
+        pid = metadict
+        out_form=sha224(pid.encode('utf-8')).hexdigest()
+        return out_form
 def make_post_transforms(test_conf,test_transforms):
     out_dir = test_conf["output_dir"]
     bin_preds = True #TODO: is it woth having continious outputs 

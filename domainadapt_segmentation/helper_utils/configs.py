@@ -196,6 +196,17 @@ def build_infer_args():
     parser.add_argument('--output_dir',required=False)
     parser.add_argument('--device',default='cuda:0',required=False)
     return parser
+def build_infer_dcm_args(): 
+    parser = argparse.ArgumentParser(
+        description="Confguration to run inference of my model"
+    )
+    parser.add_argument('--config_path',required=False,type=open,action=LoadFromFile)
+    parser.add_argument('--model_weight',required=False) 
+    parser.add_argument('--seg_map_path',required=True,help="Absolute path of file to be written containing input_image,seg_image mappings")
+    parser.add_argument('--infer_set',required=True)
+    parser.add_argument('--device',default='cuda:0',required=False)
+    parser.add_argument("--output_dir",required=True)
+    return parser
 
 def get_params():
     args = build_args()
@@ -209,6 +220,12 @@ def get_test_params():
     return arg_dict 
 def get_infer_params():
     args = build_infer_args() 
+    my_args = args.parse_args()
+    arg_dict = vars(my_args) 
+    return arg_dict 
+
+def get_infer_dcm_params():
+    args = build_infer_dcm_args() 
     my_args = args.parse_args()
     arg_dict = vars(my_args) 
     return arg_dict 
