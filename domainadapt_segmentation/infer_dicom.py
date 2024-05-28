@@ -91,19 +91,22 @@ def infer_loop(model, loader,  config,post_transform=None,output_conf=None):
     with torch.no_grad():
         for val_data in tqdm(loader, total=len(loader)):
             val_inputs= (
-                val_data[img_k].to(device)
+                val_data[img_k]
             )
             val_data['pred'] = sliding_window_inference(
                 inputs=val_inputs,
                 roi_size=roi_size,
-                sw_batch_size=1,
+                sw_batch_size=8,
                 predictor=model,
+                sw_device=device,
+                device='cpu',
             )
             post_transform(decollate_batch(val_data)[0])
             orig_path ,seg_path =  make_mapping(val_data['image_meta_dict'],output_conf)
             img_paths.extend(orig_path)
             seg_paths.extend(seg_path)
-    out_df = pd.DataFrame({'input_img':img_paths,'output_seg':seg_paths})
+            out_df = pd.DataFrame({'input_img':img_paths,'output_seg':seg_paths})
+            out_df.to_csv("./temp_seg_log.csv",index=False)
     return out_df
 
 def main():

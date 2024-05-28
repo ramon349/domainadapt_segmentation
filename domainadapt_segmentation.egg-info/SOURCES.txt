@@ -2,6 +2,7 @@ README.md
 setup.py
 domainadapt_segmentation/__init__.py
 domainadapt_segmentation/infer.py
+domainadapt_segmentation/infer_dicom.py
 domainadapt_segmentation/test.py
 domainadapt_segmentation/train.py
 domainadapt_segmentation.egg-info/PKG-INFO
