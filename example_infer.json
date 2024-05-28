@@ -1,0 +1,7 @@
+{
+ "model_weight": "absolutePathTOWeights",
+ "output_dir": "wheretoStoreFolders",
+ "seg_map_path": "output.df",
+ "device": "cuda:3",
+ "infer_set": "input.pkl"
+}
