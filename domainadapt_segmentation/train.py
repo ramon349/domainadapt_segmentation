@@ -54,15 +54,7 @@ def _parse():
 from .batch_iterators.trainer_factory import get_trainer_options 
 
 
-
-def dummy_main(rank,world_size,conf):
-    """ This is the actual main function used during training 
-    rank: is the rank order in distributed training. On local training it defaults to 0 
-    world_size: is the number of gpus being used. On local mode it is defaulted to 1 
-    """
-    seed = conf['seed']
-    setup_repro(seed)
-    m_rank = 0 
+def get_data_laoders(conf): 
     train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries 
     train_transform, val_transform = help_transforms.gen_transforms(conf) # no changes needed for default transforms 
     tr_part  = train 
@@ -97,31 +89,30 @@ def dummy_main(rank,world_size,conf):
         num_workers=num_workers,
         collate_fn=help_transforms.ramonPad()
     ) 
-    cuda_str = conf['device'][rank]
-    device = torch.device(cuda_str)
-    torch.cuda.set_device(device) 
 
-    model = model_factory(config=conf)
-    model = model.to(device)
-
-    #cofigs regarding model params, 
-    batch_size = conf["batch_size"]
-    cache_dir = conf["cache_dir"]
-    max_epochs = conf['epochs']
-    best_metric =0 
-    best_metric_epoch =0 
-
+def make_writer(conf):
     log_path = help_utils.figure_version(
         conf["log_dir"],load_past=conf['resume']
     )  # TODO think about how you could perhaps continue training
-    weight_path =log_path 
-    if not os.path.isdir(weight_path):
-        os.makedirs(weight_path)
     if not os.path.isdir(log_path):
         os.makedirs(log_path)
     writer =  SummaryWriter(log_dir=log_path)
-    global_step_count =0  
-    all_d = 0 
+    return writer,log_path
+
+def dummy_main(rank,world_size,conf):
+    """ This is the actual main function used during training 
+    rank: is the rank order in distributed training. On local training it defaults to 0 
+    world_size: is the number of gpus being used. On local mode it is defaulted to 1 
+    """
+    seed = conf['seed']
+    setup_repro(seed)
+    cuda_str = conf['device'][rank]
+    device = torch.device(cuda_str)
+    torch.cuda.set_device(device) 
+    writer = make_writer(conf)
+    model = model_factory(config=conf)
+    data_loaders = get_data_laoders(conf)
+    model = model.to(device)
     trainer_func  = get_trainer_options() 
     trainer = trainer_func(model,device=device,tb_writter=writer,conf=conf,data_loaders=data_loaders)
     trainer._log_model_graph()

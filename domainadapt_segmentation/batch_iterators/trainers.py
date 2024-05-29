@@ -74,7 +74,7 @@ class DiceTrainer(object):
         all_losses = list()
         dice_scores = list()
         post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-        post_label = Compose([Activations(to_onehot=2)])
+        post_label = Compose([Activations(to_onehot=num_seg_labels)])
         _step = 0 
         batch_size = self.conf['batch_size']
         with torch.no_grad():
@@ -83,7 +83,7 @@ class DiceTrainer(object):
                     val_data[self.img_k].to(self.device),
                     val_data[self.lbl_k],
                 ) 
-            #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
+                #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
                 val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=self.model,sw_device=self.device,mode='constant',device='cpu').to(self.device)
                 loss =  self.criterions['dice'](val_outputs.to('cpu'),val_labels)
             val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_outputs)]
