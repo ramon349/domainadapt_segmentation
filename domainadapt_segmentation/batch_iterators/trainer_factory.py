@@ -1,11 +1,6 @@
 
 class TrainerRegister: 
     __data = {}
-    @staticmethod
-    def __models():
-        if not hasattr(TrainerRegister,'_data'):
-            TrainerRegister._data = {} 
-        return TrainerRegister._data 
     @classmethod
     def register(cls,cls_name=None):
         def decorator(cls_obj):
