@@ -27,6 +27,8 @@ import numpy as np
 import pdb 
 import torch._dynamo
 from torch.utils.data import WeightedRandomSampler
+from .helper_utils.proto_losses import ProtoLoss
+
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 def makeWeightedsampler(ds):
@@ -91,6 +93,10 @@ def build_optimizers(model,conf=None):
         optis['task'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
         optis['domain']= optim.SGD(filter_params(model,'bottleneck_branch'),lr=0.1)  
         optis['all'] = optim.SGD(model.parameters(),lr=lr,momentum=momentum)
+    if conf['train_mode'] =='proto': 
+        params = [e for n,e in model.named_parameters() if not n.startswithy('conv_final.2.conv') ]
+        print(f"We added the following params: {len(params)}")
+        optis['task']= optim.SGD(params,lr=lr,momentum=momentum)  
     return optis  
 def filter_params(model,param_pattern): 
     param_list = list() 
@@ -142,6 +148,8 @@ def build_criterions(conf=None):
         criterions = dict() 
         criterions['task'] = DiceCELoss(include_background=True,reduction="mean",to_onehot_y=True,sigmoid=True)
         criterions['domain'] = torch.nn.CrossEntropyLoss(reduction="none")
+    if conf['train_mode']=='proto':
+        criterions['task'] = ProtoLoss(nav_t=0.1,beta=0.0001,s_par=0.5,reduction='mean')
     return criterions
 
 def _parse():
@@ -209,6 +217,11 @@ def train_dispatch(model=None,train_dl=None,optis=None,
         epoch_loss, global_step_count = train_one_branch_adv(model=model,train_dl=train_dl,optis=optis,
                     criterions=criterions,writer=writer,global_step_count=global_step_count,
                     epoch=epoch,conf=conf)
+    if train_mode=='debias_one_branch_dinsdale':
+        epoch_loss, global_step_count = train_one_branch_dinsdale(model=model,train_dl=train_dl,optis=optis,
+                    criterions=criterions,writer=writer,global_step_count=global_step_count,
+                    epoch=epoch,conf=conf)
+
     return epoch_loss,global_step_count
 
 def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 

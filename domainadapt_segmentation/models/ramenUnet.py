@@ -312,3 +312,81 @@ class SegResVAE(SegResNetVAE):
         x_vae = self.vae_conv_final(x_vae)
         return x_vae 
 
+
+class DinsdaleDomainPred(nn.Module):
+    def __init__(self, n_domains,init_features=4,num_blocks=4) -> None:
+        super().__init__()
+        block_list = list() 
+        feats = init_features
+        for i in range(num_blocks):
+            module = nn.Sequential(DinsdaleHalfBlock(feats,feats),
+            nn.MaxPool3d(kernel_size=2,stride=2)) 
+            block_list.append(module)
+        block_list.append(nn.Flatten(1))
+        block_list.append(nn.Linear(512,256))
+        block_list.append(nn.ReLU())
+        self.decoder_block = nn.Sequential(*block_list)
+
+        self.projector = nn.Sequential(DinsdaleProjector(init_features*64,1),
+        nn.Flatten(1),nn.Linear(in_features=5832,out_features=256),nn.ReLU())
+        self.classi = nn.Sequential(nn.Linear(512,124),nn.ReLU(),nn.Linear(124,2))
+    def forward(self,x): 
+        (bottleneck,feat_map)= x 
+        flat_feat_map = self.decoder_block(feat_map)
+        bottle_feats =  self.projector(bottleneck)
+        combi = torch.cat([bottle_feats,flat_feat_map],dim=1)
+        return self.classi(combi)
+
+
+class DinsdaleProjector(nn.Module):
+    def __init__(self, in_feats,out_feats) -> None:
+        super().__init__() 
+        self.block = nn.Sequential(
+            nn.Conv3d(in_channels=in_feats,out_channels=out_feats,kernel_size=1,padding=1,bias=False),
+            nn.ReLU(),
+            nn.BatchNorm3d(out_feats)
+        )
+    def forward(self,x):
+        return self.block(x)
+
+
+
+class DinsdaleHalfBlock(nn.Module):
+    def __init__(self,in_feats,out_feats) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv3d(in_channels=in_feats,out_channels=out_feats,kernel_size=3,padding=1,bias=False),
+            nn.ReLU(),
+            nn.BatchNorm3d(out_feats)
+        )
+    def forward(self,x):
+        return self.block(x)
+class SegResneDinsdale(SegResNet):
+    def __init__(self,         spatial_dims: int = 3,
+        init_filters: int = 8,
+        in_channels: int = 1,
+        out_channels: int = 2,
+        dropout_prob: float | None = None,
+        act: tuple | str = ("RELU", {"inplace": True}),
+        norm: tuple | str = ("GROUP", {"num_groups": 8}),
+        norm_name: str = "",
+        num_groups: int = 8,
+        use_conv_final: bool = True,
+        blocks_down: tuple = (1, 2, 2, 4),
+        blocks_up: tuple = (1, 1, 1),
+        upsample_mode: UpsampleMode | str = UpsampleMode.NONTRAINABLE,
+    ):
+        super().__init__(spatial_dims=spatial_dims, init_filters=init_filters, in_channels=in_channels, out_channels=out_channels, dropout_prob=dropout_prob, act=act, norm=norm, norm_name=norm_name, num_groups=num_groups, use_conv_final=use_conv_final, blocks_down=blocks_down, blocks_up=blocks_up, upsample_mode=upsample_mode)
+        self.discrim = DinsdaleDomainPred(n_domains=2)
+    def forward(self,x): 
+        x, down_x = self.encode(x)
+        down_x.reverse()
+        x = self.decode(x, down_x)
+        domain_input = torch.cat([down_x[0],x],dim=1)
+        domain_pred = self.discrim(domain_input)
+        if self.training or self.infer_phase: 
+            return x,domain_pred 
+        else: 
+            return x 
+    def set_infer_phase(self,infer_phase=False): 
+        self.infer_phase=infer_phase 
