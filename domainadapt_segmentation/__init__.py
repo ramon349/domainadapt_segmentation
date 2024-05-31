@@ -1,3 +1,2 @@
-from .test import *
-
+from . import test
 

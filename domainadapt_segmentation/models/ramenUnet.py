@@ -25,7 +25,9 @@ class GradReverse(Function):
         return out 
 
 def grad_reverse(x):
-    return GradReverse.apply(x)
+    return GradReverse.apply(x) 
+
+ModelRegister.add_model("3DSegRes",SegResNet)    
 @ModelRegister.register("3DSegResOneBias")
 class SegResnetBiasClassiOneBranch(SegResNet):
     def __init__(self,         spatial_dims: int = 3,

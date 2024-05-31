@@ -9,7 +9,7 @@ import torch
 from monai.transforms import AsDiscrete, Compose,Activations
 from monai.data import decollate_batch
 from monai.inferers import sliding_window_inference
-from ..helper_utils import write_pred_batches
+from ..helper_utils.utils import write_pred_batches
 import os 
 from ..helper_utils.utils  import confusion_loss 
 from torch.nn.utils import clip_grad_norm
@@ -32,15 +32,16 @@ class DiceTrainer(object):
         self.img_k = conf['img_key_name'] 
         self.lbl_k = conf['lbl_key_name']
         self.init_optims()
+        self._build_criterions()
     def _build_criterions(self): 
         self.criterions = dict() 
-        self.criterions['dice'] = DiceCELoss() 
+        self.criterions['dice'] = DiceCELoss(to_onehot_y=True)
         self.metrics = dict() 
         self.metrics['dice'] = DiceMetric(include_background=False,reduction="mean_batch")
     def _log_model_graph(self):
         self.model=  self.model.eval()
-        sample = next(iter(self.val_dl))[self.img_k]
-        self.tb.add_graph(self.model,sample.to(self.device))
+        vox_sample = torch.rand([1,1] +self.conf['spacing_vox_dim'])
+        self.tb.add_graph(self.model,vox_sample.to(self.device))
     def init_optims(self):
         self.opti : optim.SGD = optim.SGD(self.model.parameters(),lr=self.conf['learn_rate'])
         self.sch = optim.lr_scheduler.PolynomialLR(self.opti,total_iters=self.total_epochs,power=1.1)
@@ -49,14 +50,12 @@ class DiceTrainer(object):
         for i,batch in tqdm(enumerate(self.tr_dl),total=len(self.tr_dl)):
             inputs, labels = (batch[self.img_k], batch[self.lbl_k])
             self.opti.zero_grad()
-            step += 1
             inputs = inputs.to(self.device)
             labels = labels.to(self.device)
             outputs = self.model(inputs)
             loss = self.criterions['dice'](outputs,labels)  
             loss.backward()
             self.opti.step()
-            epoch_loss += loss.item()
             self.tb.add_scalar(
                 "t_batch_f_loss",
                 loss.cpu().detach().item(),

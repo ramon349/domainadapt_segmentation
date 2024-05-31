@@ -8,7 +8,7 @@ class TrainerRegister:
             return cls_obj
         return decorator
     @classmethod
-    def get_model(cls,key):
+    def get_trainer(cls,key):
         return cls.__data[key]
     @classmethod
     def num_models(cls):
@@ -16,5 +16,5 @@ class TrainerRegister:
     @classmethod
     def get_models(cls):
         return cls.__data.keys()
-def load_trainer(trainer_name): 
-    return TrainerRegister.get_trainer(trainer_name)
+def load_trainer(conf): 
+    return TrainerRegister.get_trainer(conf['train_mode'])

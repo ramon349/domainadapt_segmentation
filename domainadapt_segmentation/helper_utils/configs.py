@@ -78,13 +78,6 @@ def build_args():
         help="Initial Learning rate of our model ",
     )
     parser.add_argument(
-        "--trainer",
-        required=True,
-        type=float,
-        choices=get_trainer_options(),
-        help='Trainer to use '
-    )
-    parser.add_argument(
         "--momentum",
         required=True,
         type=float,
@@ -171,7 +164,7 @@ def build_args():
         "--train_mode",
         type=str,
         required=True,
-        choices=["vanilla", "debias", "dinsdale","mixed","consistency",'vae',"debias_two_branch","debias_one_branch",'debias_one_branch_adv'],
+        choices= get_trainer_options()
     )
     parser.add_argument("--log_dir", type=str, required=True) 
     parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])

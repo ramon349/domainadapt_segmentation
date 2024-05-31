@@ -1,14 +1,5 @@
-from monai.networks.nets.dynunet import DynUNet 
-from monai.networks.nets.unet import Unet as monaiUNet
-from monai.networks.nets.segresnet import SegResNet,SegResNetVAE 
-from .dinsdale import RamenDinsdale2D
-from .dinsdale import UNet as Dinsdale2DUnet
-from .ramenUnet import segResnetBias,SegResnetBiasClassiOneBranch,SegResnetBiasClassiTwoBranch,SegResVAE,SegResnetBiasClassiOneBranchAdv
-import pdb 
 import torch 
-from collections import OrderedDict 
 from ..helper_utils.utils import remove_ddp_tags
-import pdb 
 
 
 class ModelRegister: 
@@ -33,6 +24,9 @@ class ModelRegister:
     @classmethod
     def get_models(cls):
         return cls.__data.keys()
+    @classmethod
+    def add_model(cls,key,val):
+        cls.__data[key]=val
 
 def model_loader(model_name):
     return ModelRegister.get_model(model_name)()

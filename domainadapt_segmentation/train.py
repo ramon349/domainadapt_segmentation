@@ -27,6 +27,7 @@ import numpy as np
 import pdb 
 import torch._dynamo
 from torch.utils.data import WeightedRandomSampler
+from .batch_iterators.trainer_factory import  load_trainer
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 def makeWeightedsampler(ds):
@@ -51,7 +52,6 @@ def _parse():
     dummy_main(0,1,conf) 
 
 
-from .batch_iterators.trainer_factory import get_trainer_options 
 
 
 def get_data_laoders(conf): 
@@ -64,6 +64,7 @@ def get_data_laoders(conf):
     cache_dir = conf['cache_dir']
     tr_dset = dset(tr_part,transform= train_transform,cache_dir=cache_dir)
     val_dset = dset(val_part,transform=val_transform,cache_dir=cache_dir)
+    test_dset = dset(test,transform=val_transform,cache_dir=cache_dir)
     if conf['balance_phases']:
         print("PHASE BALANCE IS ENABLED")
         sampler = makeWeightedsampler(tr_part)
@@ -89,6 +90,14 @@ def get_data_laoders(conf):
         num_workers=num_workers,
         collate_fn=help_transforms.ramonPad()
     ) 
+    data_loaders['test'] = DataLoader(
+        test_dset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=help_transforms.ramonPad()
+    ) 
+    return data_loaders
 
 def make_writer(conf):
     log_path = help_utils.figure_version(
@@ -108,12 +117,13 @@ def dummy_main(rank,world_size,conf):
     setup_repro(seed)
     cuda_str = conf['device'][rank]
     device = torch.device(cuda_str)
-    torch.cuda.set_device(device) 
-    writer = make_writer(conf)
+    #torch.cuda.set_device(device) 
+    writer,log_path = make_writer(conf)
+    conf['log_dir'] = log_path
     model = model_factory(config=conf)
     data_loaders = get_data_laoders(conf)
     model = model.to(device)
-    trainer_func  = get_trainer_options() 
+    trainer_func  = load_trainer(conf) 
     trainer = trainer_func(model,device=device,tb_writter=writer,conf=conf,data_loaders=data_loaders)
     trainer._log_model_graph()
     trainer.fit()
