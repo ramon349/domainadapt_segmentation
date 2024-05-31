@@ -15,6 +15,7 @@ from ..helper_utils.utils  import confusion_loss
 from torch.nn.utils import clip_grad_norm
 import pdb 
 from .trainer_factory import TrainerRegister 
+from ..helper_utils.source_seg_loss import PixelPrototypeCELoss
 
 @TrainerRegister.register("DiceTrainer")
 class DiceTrainer(object):
@@ -284,4 +285,44 @@ class OneBranchTrainerBad(OneBranchTrainer):
         global_step_count += 1
         epoch_loss /= step 
         epoch_loss =  epoch_loss.to(self.device)
-        return epoch_loss,global_step_count
+        return epoch_loss,global_step_count 
+@TrainerRegister.register(cls_name="MiccaiPFA")
+class DomainPFATrainerRamen(DiceTrainer): 
+    def __init__(self, model, device='cuda:0', tb_writter=None, conf=None, data_loaders=None):
+        super().__init__(model, device, tb_writter, conf, data_loaders)
+
+    def _load_source_model_weights(self): 
+        model_dir = self.conf['log_dir']
+        w_path = os.path.join(model_dir,'model_w.ckpt')
+        weights = torch.load(w_path,map_location=self.device)
+        self.model.load_statedict(weights['model_weights'])
+        
+    def _build_criterions(self):
+        self.criterions = dict() 
+        pce_config = {'use_prototype':True,'update_prototype':False,"ce_ignore_index":-1}
+        self.criterions['dice'] = DiceCELoss(to_onehot_y=True)
+        self.criterions['pce'] = PixelPrototypeCELoss(pce_config)
+        self.metrics = dict() 
+        self.metrics['dice'] = DiceMetric(include_background=False,reduction="mean_batch")
+    def train_epoch(self):
+        self.model = self.model.train() 
+        for i,batch in tqdm(enumerate(self.tr_dl),total=len(self.tr_dl)):
+            inputs, labels = (batch[self.img_k], batch[self.lbl_k])
+            self.opti.zero_grad()
+            inputs = inputs.to(self.device)
+            labels = labels.to(self.device)
+            _,outputs = self.model(inputs)
+            #pce_loss_d= {'seg':}
+            seg_loss = self.criterions['dice'](outputs,labels)  
+            pce_loss = self.criterions['pce'](outputs,labels)
+            loss = seg_loss + pce_loss
+            loss.backward()
+            self.opti.step()
+            self.tb.add_scalar(
+                "t_batch_f_loss",
+                loss.cpu().detach().item(),
+                global_step=self.gb_step,
+            )
+            self.opti.zero_grad()
+            self.gb_step +=1 
+        self.c_epoch +=1 

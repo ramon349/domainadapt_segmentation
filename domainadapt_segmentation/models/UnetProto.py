@@ -1,5 +1,6 @@
-from monai.networks.nets.segresnet import SegResNet 
+
 from __future__ import annotations 
+from monai.networks.nets.segresnet import SegResNet 
 import warnings
 from typing import Optional, Sequence, Tuple, Union
 from monai.utils import UpsampleMode
@@ -13,7 +14,7 @@ from torch.nn import functional as F
 from collections.abc import Sequence
 from .model_factory import ModelRegister 
 
-
+@ModelRegister.register(cls_name="3DSegResProto")
 class SegResNetProto(SegResNet):
     def __init__(self,         spatial_dims: int = 3,
         init_filters: int = 8,
@@ -34,17 +35,17 @@ class SegResNetProto(SegResNet):
     def forward(self,x): 
         x, down_x = self.encode(x)
         down_x.reverse()
-        seg_out,feats = self.decode(x, down_x)
-        if self.training or self.infer_phase: 
-            return seg_out,feats 
+        feats,seg_out = self.decode(x, down_x)
+        if self.training :
+            return feats ,seg_out
         else: 
-            return x 
+            return  seg_out
     def decode(self, x, down_x):
         for i, (up, upl) in enumerate(zip(self.up_samples, self.up_layers)):
             x = up(x) + down_x[i + 1]
             x = upl(x)
 
         if self.use_conv_final:
-            seg_pair,feats = self.conv_final(x)
+            seg_pair= self.conv_final(x)
 
-        return seg_pair,feats
+        return x,seg_pair
