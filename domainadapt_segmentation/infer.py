@@ -67,19 +67,11 @@ def infer_main():
     output_dir = config['output_dir']
     device= config['device']
     train_conf, weights = help_utils.load_weights(weight_path=weight_path)
-    my_w = OrderedDict()
-    for k,v in weights.items():
-        new_name =re.sub('sub(\d)','submodule.\\1',k,)
-        new_name = new_name.replace('subconv','conv')
-        new_name = new_name.replace('subresidual','residual')
-        #new_name = re.sub('\d.conv.unit0.conv','conv.unit0.conv',new_name)
-        my_w[new_name] = v 
-    model= model_factory(config=train_conf) 
-    model.load_state_dict(my_w)
-
+    model = model_factory(train_conf)
+    model.load_state_dict(weights)
     with open(config['pkl_path'],'rb' ) as f : 
         test = pkl.load(f) 
-        test = test[-1] # TODO: DON'T KEEP THIS FOREVER 
+        test = test # TODO: DON'T KEEP THIS FOREVER 
     dset = kit_factory('basic') # dset that is not cached 
     test_t = help_transforms.gen_test_transforms(confi=train_conf,mode='infer')
     test_ds = dset(test,transform=test_t)
