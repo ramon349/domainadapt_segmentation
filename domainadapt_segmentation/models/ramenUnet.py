@@ -27,8 +27,25 @@ class GradReverse(Function):
 def grad_reverse(x):
     return GradReverse.apply(x) 
 
+@ModelRegister.register("3DSegResNaga")
+class SegresNaga(SegResNet):
+    def __init__(self,         spatial_dims: int = 3,
+        init_filters: int = 16,
+        in_channels: int = 1,
+        out_channels: int = 4,
+        dropout_prob: float | None = 0.2,
+        act: tuple | str = ("RELU", {"inplace": True}),
+        norm: tuple | str = ("GROUP", {"num_groups": 8}),
+        norm_name: str = "",
+        num_groups: int = 8,
+        use_conv_final: bool = True,
+        blocks_down: tuple = (1, 2, 2, 4),
+        blocks_up: tuple = (1, 1, 1),
+        upsample_mode: UpsampleMode | str = UpsampleMode.NONTRAINABLE,
+    ):
+        super().__init__(spatial_dims=spatial_dims, init_filters=init_filters, in_channels=in_channels, out_channels=out_channels, dropout_prob=dropout_prob, act=act, norm=norm, norm_name=norm_name, num_groups=num_groups, use_conv_final=use_conv_final, blocks_down=blocks_down, blocks_up=blocks_up, upsample_mode=upsample_mode)
 ModelRegister.add_model("3DSegRes",SegResNet)    
-@ModelRegister.register("3DSegResOneBias")
+@ModelRegister.register("3DSegResBiasClassOne")
 class SegResnetBiasClassiOneBranch(SegResNet):
     def __init__(self,         spatial_dims: int = 3,
         init_filters: int = 8,

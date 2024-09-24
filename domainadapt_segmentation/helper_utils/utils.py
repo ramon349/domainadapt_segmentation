@@ -118,7 +118,7 @@ def makeWeightedsampler(ds):
 def load_weights(weight_path): 
     ck = torch.load(weight_path,map_location='cpu') 
     conf = ck['conf']
-    weights = remove_ddp_tags(ck['state_dict'] )
+    weights = remove_ddp_tags(ck['model_weight'] )
     return conf,weights 
 
 def remove_ddp_tags(state_d):

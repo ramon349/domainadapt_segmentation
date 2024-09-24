@@ -173,6 +173,7 @@ def build_args():
     parser.add_argument("--model_weight",type=str,required=False)
     parser.add_argument("--balance_phases",type=parse_bool,required=False,default=False)
     parser.add_argument("--resume",type=parse_bool,required=False,default=False)
+    parser.add_argument("--source_model_weight",type=str,required=False,default=None)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)

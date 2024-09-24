@@ -32,11 +32,11 @@ class SegResNetProto(SegResNet):
     ):
         super().__init__(spatial_dims=spatial_dims, init_filters=init_filters, in_channels=in_channels, out_channels=out_channels, dropout_prob=dropout_prob, act=act, norm=norm, norm_name=norm_name, num_groups=num_groups, use_conv_final=use_conv_final, blocks_down=blocks_down, blocks_up=blocks_up, upsample_mode=upsample_mode)
 
-    def forward(self,x): 
+    def forward(self,x,only_feature=False): 
         x, down_x = self.encode(x)
         down_x.reverse()
         feats,seg_out = self.decode(x, down_x)
-        if self.training :
+        if self.training  or only_feature :
             return feats ,seg_out
         else: 
             return  seg_out
