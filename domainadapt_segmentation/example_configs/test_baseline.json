@@ -1,0 +1,7 @@
+{
+ "model_weight": "",
+ "output_dir": "",
+ "metrics_path": "",
+ "device": "cuda:3",
+ "test_set": ""
+}
