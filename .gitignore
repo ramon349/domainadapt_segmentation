@@ -9,3 +9,4 @@ domainadapt_segmentation/results
 domainadapt_segmentation.egg-info/
 build/
 datasets/
+secrets_folder/
