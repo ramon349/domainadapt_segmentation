@@ -5,7 +5,8 @@ Repository for benchmarking code for domain adaptation of 3D segmentation models
  - use a new conda env with python 3.10 
  - git clone the repo and cd into it. 
  - run pip install -e .
-
+# Dataset setup 
+ - the code in ./domainadapt_segmentation/notebooks contains descriptions for how to process the datasets 
 # Training models 
 - Train models using 
 - python3 -m domainadapt_segmentation.train --config_path ./domainadapt_segmentation/example_configs/train_baseline.json 
