@@ -1,17 +1,17 @@
 
 {
- "data_path": "/Absolute/Path/To/data.pkl",
- "cache_dir": "/Absolute/Path/To/Some/Directory/For/Caching",
- "log_dir": "DirectoryToStoreModelLogs",
- "batch_size": 4,
+ "data_path": "/mnt/storage/ramon_data_curations/domainadapt_segmentation/datasets/kits23.pkl",
+ "cache_dir": "/mnt/storage/ramon_data_curations/domainadapt_segmentation/datasets/cache_dir",
+ "log_dir": "/mnt/storage/ramon_data_curations/domainadapt_segmentation/datasets/model_logs/baseline_train",
+ "batch_size": 1,
  "learn_rate": 0.01,
  "momentum": 0.99,
  "model": "3DSegRes",
  "train_mode": "vanilla",
  "epochs": 500,
- "num_workers": 16,
+ "num_workers": 1,
  "img_key_name": "image",
- "lbl_key_name": "label",
+ "lbl_key_name": "lbl",
  "train_transforms": [
   "load",
   "channel_first",
@@ -75,8 +75,7 @@
  "rand_shift_intensity_offset": 0.001,
  "rand_shift_intensity_prob": 0.75,
  "device": [
-  "cuda:0",
-  "cuda:1"
+  "cpu"
  ],
  "run_param_search": false,
  "dev": false,

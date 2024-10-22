@@ -228,10 +228,9 @@ def train_basic(model=None,train_dl=None,optis=None,criterions=None,writer=None,
     rank = dist.get_rank() if len(conf['device'])>=2  else 0 
     world_size = dist.get_world_size() if len(conf['device'])>=2 else 1
     step= 0  
-    device = torch.device(f"cuda:{rank}")
+    device = torch.device(conf['device'][rank])
     epoch_loss = 0  
     for batch_n,batch_data in enumerate(train_dl): 
-        #print(f"{rank} is on batch: {batch_n} using GPU {device}") 
         inputs, labels = (deepcopy(batch_data[img_k]), deepcopy(batch_data[lbl_k]) )
         if step == 0 and epoch % 2 == 0 and rank==0:
             help_utils.write_batches(

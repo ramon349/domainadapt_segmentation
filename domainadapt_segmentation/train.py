@@ -177,9 +177,6 @@ def _parse():
         print("  Number of complete trials: ", len(complete_trials))
     else:
         gpus = conf['device']  
-        for e in gpus: 
-            print(e.split(':'))
-        device_nums = [e.split(':')[1] for e in gpus]
         #os.environ['CUDA_VISIBLE_DEVICES']= ",".join(device_nums) 
         world_size = len(gpus)
         if world_size==1: 
@@ -241,7 +238,6 @@ def dummy_main(rank,world_size,conf):
         m_rank = dist.get_rank() 
     else: 
         m_rank = 0 
-    print(f"I am ran {m_rank} and i am starting")
     #here we set up the partitioning of the training data across all the workers 
     ##SETUP ALL THE DATASET RELATED ITEMS 
     train, val, test = help_io.load_data(conf["data_path"]) # this is just a list of dictionaries 
@@ -290,7 +286,8 @@ def dummy_main(rank,world_size,conf):
     ) 
     cuda_str = conf['device'][rank]
     device = torch.device(cuda_str)
-    torch.cuda.set_device(device) 
+    if cuda_str !='cpu': 
+        torch.cuda.set_device(device) 
 
     model = model_factory(config=conf)
     loss_function = DiceCELoss(

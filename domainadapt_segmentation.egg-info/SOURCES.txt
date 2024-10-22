@@ -18,6 +18,7 @@ domainadapt_segmentation/data_factories/kits_factory.py
 domainadapt_segmentation/helper_utils/__init__.py
 domainadapt_segmentation/helper_utils/configs.py
 domainadapt_segmentation/helper_utils/data_io.py
+domainadapt_segmentation/helper_utils/proto_losses.py
 domainadapt_segmentation/helper_utils/transforms.py
 domainadapt_segmentation/helper_utils/utils.py
 domainadapt_segmentation/models/__init__.py
