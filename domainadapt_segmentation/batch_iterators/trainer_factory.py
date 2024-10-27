@@ -16,5 +16,5 @@ class TrainerRegister:
     @classmethod
     def get_models(cls):
         return cls.__data.keys()
-def load_trainer(conf): 
-    return TrainerRegister.get_trainer(conf['train_mode'])
+def load_trainer(trainer): 
+    return TrainerRegister.get_trainer(trainer)

@@ -16,6 +16,12 @@ from monai.transforms import (
     SqueezeDimd,
     Resized,
     SpatialPad,
+    Compose,
+    AsDiscreted,
+    Invertd,
+    SaveImaged,
+    RemoveSmallObjectsd
+
 )
 from monai.data import NibabelReader
 import torch
@@ -27,7 +33,43 @@ from monai.transforms.croppad.batch import PadListDataCollate, replace_element
 import numpy as np
 from monai.transforms.croppad.array import CenterSpatialCrop
 from monai.data.utils import list_data_collate
+from hashlib import sha224
 
+def subject_formater(metadict,ignore):
+    pid = metadict['filename_or_obj']
+    out_form=sha224(pid.encode('utf-8')).hexdigest()
+    return {'subject':f"{out_form}","idx":"0"}
+def make_post_transforms(test_conf,test_transforms):
+    out_dir = test_conf["output_dir"]
+    bin_preds = True #TODO: is it woth having continious outputs 
+    post_transforms = Compose(
+        [
+            Invertd(
+                keys=["pred"],
+                orig_keys=["pred"],
+                orig_meta_keys=["image_meta_dict"],
+                transform=test_transforms,
+                nearest_interp=False,
+                meta_keys=["seg_info"],
+                to_tensor=True
+            ),
+            AsDiscreted(keys="pred",argmax=True),
+            RemoveSmallObjectsd(keys="pred", min_size=500),
+            SaveImaged(
+                keys="pred",
+                meta_keys="pred_meta_dict",
+                output_dir=out_dir,
+                output_postfix="seg",
+                resample=False,
+                data_root_dir="",
+                output_name_formatter=subject_formater,
+                savepath_in_metadict=True,
+                meta_key_postfix=""
+            ),
+        ]
+        
+    )
+    return post_transforms
 
 def get_transform(name, conf,mode='train'):
     img_k = conf["img_key_name"]

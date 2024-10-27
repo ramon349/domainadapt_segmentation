@@ -22,19 +22,19 @@ from collections import OrderedDict
 import copy 
 from torch.nn import functional as F
 import numpy as np 
-
+import pandas as pd 
 @TrainerRegister.register("DiceTrainer")
 class DiceTrainer(object):
-    def __init__(self,model,device='cuda:0',tb_writter=None,conf=None,data_loaders=None):
+    def __init__(self,model,tb_writter=None,conf=None,dl_dict=None):
         self.model=model
         self.tb:SummaryWriter= tb_writter 
+        self.dl_dict = dl_dict
         self.conf=conf 
-        self.tr_dl=data_loaders['train']
-        self.val_dl=data_loaders['val']
-        self.ts_dl=data_loaders['test']
         self.total_epochs = conf['epochs']
         self.c_epoch = 0 
-        self.device= device 
+        self.rank = self.conf['rank'] if 'rank' in self.conf else 0
+        self.device= self.conf['device'][self.rank]
+        self.model = self.model.to(self.device)
         self.gb_step=0
         self.img_k = conf['img_key_name'] 
         self.lbl_k = conf['lbl_key_name']
@@ -54,7 +54,7 @@ class DiceTrainer(object):
         self.sch = optim.lr_scheduler.PolynomialLR(self.opti,total_iters=self.total_epochs,power=1.1)
     def train_epoch(self):
         self.model = self.model.train() 
-        for i,batch in tqdm(enumerate(self.tr_dl),total=len(self.tr_dl)):
+        for i,batch in tqdm(enumerate(self.dl_dict['train']),total=len(self.dl_dict['train'])):
             inputs, labels = (batch[self.img_k], batch[self.lbl_k])
             self.opti.zero_grad()
             inputs = inputs.to(self.device)
@@ -84,7 +84,7 @@ class DiceTrainer(object):
         _step = 0 
         batch_size = self.conf['batch_size']
         with torch.no_grad():
-            for i,val_data in enumerate(self.val_dl):
+            for i,val_data in enumerate(self.dl_dict['val']):
                 val_inputs, val_labels = (
                     val_data[self.img_k].to(self.device),
                     val_data[self.lbl_k],
@@ -133,6 +133,50 @@ class DiceTrainer(object):
             'epoch':self.c_epoch,
             },f=w_path
         )
+    def test_loop(self,loader,post_t): 
+        roi_size = self.conf["spacing_vox_dim"]
+        img_k = self.conf["img_key_name"]
+        lbl_k = self.conf["lbl_key_name"]
+        num_seg_labels = self.conf["num_seg_labels"]
+        metric = DiceMetric(include_background=True, reduction="mean")
+        self.model.eval()
+        all_losses = list()
+        dice_scores = list()
+        post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+        post_label = Compose([Activations(to_onehot=2)])
+        _step = 0 
+        pids = list() 
+        img_path = list() 
+        lbl_path = list() 
+        saved_path = list() 
+        with torch.no_grad():
+            for val_data in tqdm(loader, total=len(loader)):
+                val_inputs, val_labels = (
+                    val_data[img_k].to(self.device),
+                    val_data[lbl_k].to(self.device),
+                )
+                val_data['pred'] = sliding_window_inference(
+                    inputs=val_inputs,
+                    roi_size=roi_size,
+                    sw_batch_size=1,
+                    predictor=self.model,
+                )
+                val_data['pred_meta_dict'] = val_data['image_meta_dict']
+                val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_data['pred'])]
+                val_labels = [post_label(i).to('cpu') for i in decollate_batch(val_labels)]
+                val_store = [post_t(i) for i in decollate_batch(val_data)]
+                metric(y_pred=val_outputs, y=val_labels)
+                metric_val = metric.aggregate().item()
+                metric.reset()
+                dice_scores.append(metric_val)
+                pids.append(val_data['pid'][0])
+                stored_path = val_store[0]['pred'].meta['saved_to']
+                saved_path.append(stored_path)
+                img_path.append(val_data['image_meta_dict']['filename_or_obj'][0])
+                lbl_path.append(val_data['label_meta_dict']['filename_or_obj'][0])
+            out_df = pd.DataFrame({'pids':pids,'img':img_path,'lbl':lbl_path,'dice':dice_scores,'pred':saved_path}) 
+        return out_df 
+
 
 @TrainerRegister.register("OneBranchConf")
 class OneBranchTrainer(DiceTrainer):

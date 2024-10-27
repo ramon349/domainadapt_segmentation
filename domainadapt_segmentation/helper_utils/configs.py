@@ -36,7 +36,7 @@ class LoadFromFile(argparse.Action):
 
 
 def parse_bool(s: str):
-    return eval(s) == True
+    return  s.lower() == 'true'
 
 
 def warn_optuna(s: str):
@@ -186,23 +186,26 @@ def build_test_args():
     parser = argparse.ArgumentParser(
         description="Confguration for my deep learning model testing for segmentation"
     )
-    parser.add_argument('--config-path',required=False,type=open,action=LoadFromFile)
+    parser.add_argument('--config_path',required=False,type=open,action=LoadFromFile)
     parser.add_argument('--model_weight',required=True) 
     parser.add_argument('--output_dir',required=True)
     parser.add_argument('--device',default='cuda:0',required=False)
     parser.add_argument("--metrics_path",required=True )
     parser.add_argument("--test_set",type=str,required=False,default=False)
+    parser.add_argument("--trainer",required=True)
     return parser
 def build_infer_args(): 
     parser = argparse.ArgumentParser(
         description="Confguration to run inference of my model"
     )
-    parser.add_argument('--config-path',required=False,type=open,action=LoadFromFile)
+    parser.add_argument('--config_path',required=False,type=open,action=LoadFromFile)
     parser.add_argument('--model_weight',required=False) 
     parser.add_argument('--pkl_path',required=False)
     parser.add_argument('--output_dir',required=False)
     parser.add_argument('--device',default='cuda:0',required=False)
+    parser.add_argument("--trainer",required=True)
     return parser
+
 
 def get_params():
     args = build_args()
