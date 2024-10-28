@@ -212,7 +212,8 @@ def build_infer_args():
     parser.add_argument("--model_weight", required=False)
     parser.add_argument("--pkl_path", required=False)
     parser.add_argument("--output_dir", required=False)
-    parser.add_argument("--device", default="cuda:0", required=False)
+    parser.add_argument("--device", default="cuda:0", type=json.loads, required=True)
+    parser.add_argument("--mapping_path",default=None,type=str,required=True)
     parser.add_argument("--trainer", required=True)
     return parser
 

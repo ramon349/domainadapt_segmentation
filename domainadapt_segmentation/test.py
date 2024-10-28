@@ -47,7 +47,7 @@ def test_main():
     # load the test_pkl of interest
     with open(config["test_set"], "rb") as f:
         test = pkl.load(f)
-        test = test[-1][0:5]
+        test = test[-1]
     dset = kit_factory("basic")  # dset that is not cached
     # get the relevant transforms
     test_t = help_transforms.gen_test_transforms(confi=train_conf)

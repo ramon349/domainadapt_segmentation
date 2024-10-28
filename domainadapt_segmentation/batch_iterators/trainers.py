@@ -233,6 +233,31 @@ class DiceTrainer(object):
                 }
             )
         return out_df
+    def infer_loop(self,post_t): 
+        roi_size = self.conf["spacing_vox_dim"]
+        img_k = self.conf["img_key_name"]
+        self.model = self.model.eval()
+        img_path = list()
+        saved_path = list()
+        with torch.no_grad():
+            for val_data in tqdm(self.dl_dict['infer'] , total=len(self.dl_dict['infer'])):
+                val_inputs = val_data[img_k].to(self.device)
+                val_data["pred"] = sliding_window_inference(
+                    inputs=val_inputs,
+                    roi_size=roi_size,
+                    sw_batch_size=1,
+                    predictor=self.model,
+                    sw_device=self.device,
+                    device='cpu' 
+
+                )
+                val_store = [post_t(i) for i in decollate_batch(val_data)]
+                stored_path = [e['pred'].meta['saved_to'] for e in val_store] 
+                saved_path.append(stored_path[0])
+                img_path.append(val_data["image_meta_dict"]["filename_or_obj"][0])
+        out_df = pd.DataFrame({'img':img_path,'pred':saved_path})
+        return out_df 
+
 
 
 @TrainerRegister.register("OneBranchConf")
