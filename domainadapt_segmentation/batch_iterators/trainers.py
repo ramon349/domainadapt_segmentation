@@ -23,6 +23,7 @@ import copy
 from torch.nn import functional as F
 import numpy as np 
 import pandas as pd 
+from ..helper_utils.utils import reduce_tensors
 @TrainerRegister.register("DiceTrainer")
 class DiceTrainer(object):
     def __init__(self,model,tb_writter=None,conf=None,dl_dict=None):
@@ -33,8 +34,8 @@ class DiceTrainer(object):
         self.total_epochs = conf['epochs']
         self.c_epoch = 0 
         self.rank = self.conf['rank'] if 'rank' in self.conf else 0
+        self.world_size= len(self.conf['device'])
         self.device= self.conf['device'][self.rank]
-        self.model = self.model.to(self.device)
         self.gb_step=0
         self.img_k = conf['img_key_name'] 
         self.lbl_k = conf['lbl_key_name']
@@ -46,28 +47,37 @@ class DiceTrainer(object):
         self.metrics = dict() 
         self.metrics['dice'] = DiceMetric(include_background=False,reduction="mean_batch")
     def _log_model_graph(self):
-        self.model=  self.model.eval()
-        vox_sample = torch.rand([1,1] +self.conf['spacing_vox_dim'])
-        self.tb.add_graph(self.model,vox_sample.to(self.device))
+        if self.rank==0:
+            self.model=  self.model.eval()
+            vox_sample = torch.rand([1,1] +self.conf['spacing_vox_dim'])
+            self.tb.add_graph(self.model,vox_sample.to(self.device))
+            self.mdoel = self.model.train()
     def init_optims(self):
         self.opti : optim.SGD = optim.SGD(self.model.parameters(),lr=self.conf['learn_rate'])
         self.sch = optim.lr_scheduler.PolynomialLR(self.opti,total_iters=self.total_epochs,power=1.1)
+    def _log_var(self,val_name,val,gb_step):
+        avg_val =reduce_tensors(val,world_size=self.world_size).cpu().detach().item()
+        if self.rank==0: 
+            self.tb.add_scalar(val_name,avg_val,gb_step)
+
+        
     def train_epoch(self):
         self.model = self.model.train() 
-        for i,batch in tqdm(enumerate(self.dl_dict['train']),total=len(self.dl_dict['train'])):
+        #this is a workaround to have multiple processes updating progress bar 
+        #only have process 0 update. 
+        train_batch = enumerate(self.dl_dict['train'])
+        if self.rank==0:
+            train_batch = tqdm(train_batch,total=len(self.dl_dict['train']))
+        for i,batch in train_batch:
             inputs, labels = (batch[self.img_k], batch[self.lbl_k])
             self.opti.zero_grad()
             inputs = inputs.to(self.device)
             labels = labels.to(self.device)
-            outputs = self.model(inputs,only_features=True)
+            outputs = self.model(inputs)
             loss = self.criterions['dice'](outputs,labels)  
             loss.backward()
             self.opti.step()
-            self.tb.add_scalar(
-                "t_batch_f_loss",
-                loss.cpu().detach().item(),
-                global_step=self.gb_step,
-            )
+            self._log_var("t_batch_f_loss",loss,self.gb_step)
             self.opti.zero_grad()
             self.gb_step +=1 
         self.c_epoch +=1 
@@ -92,9 +102,9 @@ class DiceTrainer(object):
                 #this distinciton is needed because my 2D models need a way to compress the 2d patches to be (h,w) instead of (h,w,1).TODO: can i clean htat up?
                 val_outputs= sliding_window_inference(inputs=val_inputs,roi_size=roi_size,sw_batch_size=batch_size,predictor=self.model,sw_device=self.device,mode='constant',device='cpu').to(self.device)
                 loss =  self.criterions['dice'](val_outputs.to('cpu'),val_labels)
-            val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_outputs)]
-            val_labels =  [post_label(i).to('cpu') for i in decollate_batch(val_labels)]
-            if _step==0: 
+            val_outputs = [post_pred(i).to(self.device) for i in decollate_batch(val_outputs)]
+            val_labels =  [post_label(i).to(self.device) for i in decollate_batch(val_labels)]
+            if _step==0 and self.rank==0: 
                 write_pred_batches(
                         writer=self.tb,
                         inputs=val_data[self.img_k].detach(),
@@ -106,7 +116,8 @@ class DiceTrainer(object):
                         is_eval=True
                     ) 
             metric(y_pred=val_outputs, y=val_labels)
-            metric_val= metric.aggregate(reduction="mean_batch")
+            metric_val= metric.aggregate(reduction="mean_batch").item() 
+            metric.reset() 
             dice_scores.extend(metric_val)
             all_losses.append(loss)
             _step +=1 
@@ -120,7 +131,8 @@ class DiceTrainer(object):
         for i in range(num_epochs): 
             self.train_epoch()
             self.sch.step()
-            self.tb.add_scalar('learning_rate',scalar_value=self.sch.get_lr()[0],global_step=self.c_epoch)
+            if self.rank ==0:
+                self.tb.add_scalar('learning_rate',scalar_value=self.sch.get_lr()[0],global_step=self.c_epoch)
             val_dice,val_loss = self.val_epoch()
             if val_loss <= best_val_loss: 
                 self.store_model()

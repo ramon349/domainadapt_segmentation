@@ -8,6 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 from collections import OrderedDict
 import pdb 
+from torch import distributed as dist 
 def subsample_list(my_list: list, perc: float):
     num_samples = int(math.floor(len(my_list) * perc))
     return random.sample(my_list, num_samples)
@@ -150,3 +151,8 @@ class confusion_loss(nn.Module):
         if self.reduction =='none':
             loss = torch.mul(normalised_log_sum,-1)
         return loss 
+def reduce_tensors(tensor,op=dist.ReduceOp.SUM,world_size=2): 
+    tensor = tensor.clone() 
+    dist.all_reduce(tensor,op) 
+    tensor.div(world_size) 
+    return tensor
