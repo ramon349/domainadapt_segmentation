@@ -9,8 +9,8 @@ import pdb
 from torch import Tensor
 import numpy as np
 
-class ProtoLoss(nn.Module):
 
+class ProtoLoss(nn.Module):
     """
     Official Implementaion of PCT (NIPS 2021)
     Parameters:
@@ -28,17 +28,25 @@ class ProtoLoss(nn.Module):
 
     """
 
-    def __init__(self, nav_t: float, beta: float, num_classes: int, device: torch.device, s_par: Optional[float] = 0.5, reduction: Optional[str] = 'mean'):
+    def __init__(
+        self,
+        nav_t: float,
+        beta: float,
+        num_classes: int,
+        device: torch.device,
+        s_par: Optional[float] = 0.5,
+        reduction: Optional[str] = "mean",
+    ):
         super(ProtoLoss, self).__init__()
         self.nav_t = nav_t
         self.s_par = s_par
         self.beta = beta
-        self.prop = (torch.ones((num_classes,1))*(1/num_classes)).to(device)
+        self.prop = (torch.ones((num_classes, 1)) * (1 / num_classes)).to(device)
         # self.prop = torch.tensor([[0.90],[0.10]]).to(device)
         # self.prop = torch.tensor([[0.60],[0.10],[0.05],[0.05],[0.20]]).to(device)
         # self.prop = torch.tensor([[0.50],[0.20],[0.05],[0.05],[0.20]]).to(device)
         self.eps = 1e-6
-         
+
     def pairwise_cosine_dist(self, x, y):
         x = F.normalize(x, p=2, dim=1)
         y = F.normalize(y, p=2, dim=1)
@@ -46,10 +54,10 @@ class ProtoLoss(nn.Module):
 
     def get_pos_logits(self, sim_mat, prop):
         log_prior = torch.log(prop + self.eps)
-        return sim_mat/self.nav_t + log_prior
+        return sim_mat / self.nav_t + log_prior
 
     def update_prop(self, prop):
-        return (1 - self.beta) * self.prop + self.beta * prop 
+        return (1 - self.beta) * self.prop + self.beta * prop
 
     def forward(self, mu_s: torch.Tensor, f_t: torch.Tensor) -> torch.Tensor:
         # Update proportions
@@ -59,20 +67,21 @@ class ProtoLoss(nn.Module):
         prop = s_dist_old.mean(1, keepdim=True)
         # print(prop)
         self.prop = self.update_prop(prop)
-        
 
         # Calculate bi-directional transport loss
         new_logits = self.get_pos_logits(sim_mat, self.prop)
         s_dist = F.softmax(new_logits, dim=0)
-        t_dist = F.softmax(sim_mat/self.nav_t, dim=1)
+        t_dist = F.softmax(sim_mat / self.nav_t, dim=1)
         cost_mat = self.pairwise_cosine_dist(mu_s, f_t)
-        t2p_loss = (self.s_par*cost_mat*s_dist).sum(0).mean() 
-        p2t_loss = (((1-self.s_par)*cost_mat*t_dist).sum(1)*self.prop.squeeze(1)).sum()
-        
+        t2p_loss = (self.s_par * cost_mat * s_dist).sum(0).mean()
+        p2t_loss = (
+            ((1 - self.s_par) * cost_mat * t_dist).sum(1) * self.prop.squeeze(1)
+        ).sum()
+
         return t2p_loss, p2t_loss
 
-class Proto_with_KLProp_Loss(nn.Module):
 
+class Proto_with_KLProp_Loss(nn.Module):
     """
     Official Implementaion of PCT (NIPS 2021)
     Parameters:
@@ -90,13 +99,21 @@ class Proto_with_KLProp_Loss(nn.Module):
 
     """
 
-    def __init__(self, nav_t: float, beta: float, num_classes: int, device: torch.device, s_par: Optional[float] = 0.5, reduction: Optional[str] = 'mean'):
+    def __init__(
+        self,
+        nav_t: float,
+        beta: float,
+        num_classes: int,
+        device: torch.device,
+        s_par: Optional[float] = 0.5,
+        reduction: Optional[str] = "mean",
+    ):
         super(Proto_with_KLProp_Loss, self).__init__()
         self.nav_t = nav_t
         self.s_par = s_par
         self.beta = beta
         self.eps = 1e-6
-         
+
     def pairwise_cosine_dist(self, x, y):
         x = F.normalize(x, p=2, dim=1)
         y = F.normalize(y, p=2, dim=1)
@@ -104,10 +121,10 @@ class Proto_with_KLProp_Loss(nn.Module):
 
     def get_pos_logits(self, sim_mat, prop):
         log_prior = torch.log(prop + self.eps)
-        return sim_mat/self.nav_t + log_prior
+        return sim_mat / self.nav_t + log_prior
 
     def update_prop(self, prop):
-        return (1 - self.beta) * self.prop + self.beta * prop 
+        return (1 - self.beta) * self.prop + self.beta * prop
 
     def forward(self, mu_s: torch.Tensor, f_t: torch.Tensor, gt_prop) -> torch.Tensor:
         # Update proportions
@@ -116,18 +133,21 @@ class Proto_with_KLProp_Loss(nn.Module):
         # Calculate bi-directional transport loss
         new_logits = self.get_pos_logits(sim_mat, gt_prop)
         s_dist = F.softmax(new_logits, dim=0)
-        t_dist = F.softmax(sim_mat/self.nav_t, dim=1)
-        
+        t_dist = F.softmax(sim_mat / self.nav_t, dim=1)
+
         cost_mat = self.pairwise_cosine_dist(mu_s, f_t)
-        source_loss = (self.s_par*cost_mat*s_dist).sum(0).mean() 
-        target_loss = (((1-self.s_par)*cost_mat*t_dist).sum(1)*gt_prop.squeeze(1)).sum()
+        source_loss = (self.s_par * cost_mat * s_dist).sum(0).mean()
+        target_loss = (
+            ((1 - self.s_par) * cost_mat * t_dist).sum(1) * gt_prop.squeeze(1)
+        ).sum()
         # est_prop = s_dist.mean(1, keepdim=True)
         # log_gt_prop = (gt_prop + 1e-6).log()
         # log_est_prop = (est_prop + 1e-6).log()
         # kl_loss = (1-self.s_par)*(-torch.sum(est_prop * log_gt_prop) + torch.sum(est_prop * log_est_prop))
-        
+
         loss = source_loss + target_loss
         return loss
+
 
 # class EntropyLoss(nn.Module):
 #     def __init__(self,nav_t,num_classes,device,weights=None):
@@ -137,12 +157,12 @@ class Proto_with_KLProp_Loss(nn.Module):
 #             self.weights = weights
 #         else:
 #             self.weights = (torch.ones((num_classes,1))*(1/num_classes)).to(device)
-            
+
 #     def get_prob_logits(self, x, y):
 #         x = F.normalize(x, p=2, dim=1)
 #         y = F.normalize(y, p=2, dim=1)
 #         return torch.matmul(x, y.T)
-    
+
 #     def forward(self, mu_s: torch.Tensor, f_t: torch.Tensor) -> torch.Tensor:
 #         prob_logits = self.get_prob_logits(mu_s,f_t)/self.nav_t
 #         probs = F.softmax(prob_logits,dim=0)
@@ -187,7 +207,7 @@ class Proto_with_KLProp_Loss(nn.Module):
 #         self.s_par = s_par
 #         self.beta = beta
 #         self.eps = 1e-6
-         
+
 #     def get_prob_logits(self, x, y):
 #         x = F.normalize(x, p=2, dim=1)
 #         y = F.normalize(y, p=2, dim=1)
@@ -199,22 +219,22 @@ class Proto_with_KLProp_Loss(nn.Module):
 #         prob_logits = self.get_prob_logits(mu_s,f_t)/self.nav_t
 #         probs = F.softmax(prob_logits,dim=0)
 #         est_prop = probs.mean(dim=1, keepdim=True)
-        
+
 #         log_gt_prop = (gt_prop + 1e-6).log()
 #         log_est_prop = (est_prop + 1e-6).log()
-        
+
 #         weights = 1/gt_prop
 #         weights = weights/torch.sum(weights)
-        
+
 #         # entropy_loss = torch.sum(-weights * probs * torch.log(probs + 1e-6), dim=0).mean()
 #         entropy_loss = torch.sum(-probs * torch.log(probs + 1e-6), dim=0).mean()
 #         klprop_loss = -torch.sum(est_prop * log_gt_prop) + torch.sum(est_prop * log_est_prop)
 #         loss = self.s_par*entropy_loss + (1-self.s_par)*klprop_loss
-        
+
 #         return loss
 
-class Entropy_KLProp_Loss(nn.Module):
 
+class Entropy_KLProp_Loss(nn.Module):
     """
     Simplify Implementaion of Entropy and KLProp Loss (MICCAI 2020)
     Parameters:
@@ -232,63 +252,76 @@ class Entropy_KLProp_Loss(nn.Module):
 
     """
 
-    def __init__(self, nav_t: float, beta: float, num_classes: int, device: torch.device, s_par: Optional[float] = 0.5, reduction: Optional[str] = 'mean'):
+    def __init__(
+        self,
+        nav_t: float,
+        beta: float,
+        num_classes: int,
+        device: torch.device,
+        s_par: Optional[float] = 0.5,
+        reduction: Optional[str] = "mean",
+    ):
         super(Entropy_KLProp_Loss, self).__init__()
         self.nav_t = nav_t
         self.s_par = s_par
         self.beta = beta
         self.eps = 1e-6
-         
+
     def forward(self, probs, gt_prop) -> torch.Tensor:
         # Update proportions
-        probs = rearrange(probs, 'b c h w -> (b h w) c')
-        probs = F.softmax(probs,dim=1)
+        probs = rearrange(probs, "b c h w -> (b h w) c")
+        probs = F.softmax(probs, dim=1)
         est_prop = probs.mean(dim=0, keepdim=True)
         log_gt_prop = (gt_prop + 1e-6).log()
         log_est_prop = (est_prop + 1e-6).log()
-        
-        
+
         # entropy_loss = torch.sum(-weights * probs * torch.log(probs + 1e-6), dim=0).mean()
         entropy_loss = torch.sum(-probs * torch.log(probs + 1e-6), dim=1).mean()
-        klprop_loss = -torch.sum(est_prop * log_gt_prop) + torch.sum(est_prop * log_est_prop)
-        loss = self.s_par*entropy_loss + (1-self.s_par)*klprop_loss
-        
+        klprop_loss = -torch.sum(est_prop * log_gt_prop) + torch.sum(
+            est_prop * log_est_prop
+        )
+        loss = self.s_par * entropy_loss + (1 - self.s_par) * klprop_loss
+
         return loss
-    
+
+
 class EntropyLoss(nn.Module):
-    def __init__(self,num_classes,device,weights=None):
+    def __init__(self, num_classes, device, weights=None):
         super(EntropyLoss, self).__init__()
         if weights is not None:
             self.weights = weights
         else:
-            self.weights = (torch.ones((1,num_classes))*(1/num_classes)).to(device)
+            self.weights = (torch.ones((1, num_classes)) * (1 / num_classes)).to(device)
 
-    
     def forward(self, probs) -> torch.Tensor:
-        probs = rearrange(probs, 'b c h w -> (b h w) c')
-        probs = F.softmax(probs,dim=1)
-        
+        probs = rearrange(probs, "b c h w -> (b h w) c")
+        probs = F.softmax(probs, dim=1)
+
         return torch.sum(-probs * torch.log(probs + 1e-6), dim=1).mean()
-    
+
+
 class EntropyClassMarginals(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, probs):
-        avg_p = probs.mean(dim=[2, 3]) # avg along the pixels dim h x w -> size is batch x n_classes
+        avg_p = probs.mean(
+            dim=[2, 3]
+        )  # avg along the pixels dim h x w -> size is batch x n_classes
         entropy_cm = torch.sum(avg_p * torch.log(avg_p + 1e-6), dim=1).mean()
         return entropy_cm
-    
+
+
 # class PseudoLabel_Loss(nn.Module):
 #     def __init__(self):
 #         super(PseudoLabel_Loss,self).__init__()
 #         self.eps = 1e-10
-    
+
 #     def forward(self, pred, pseudo_label_teacher, drop_percent, prob_teacher):
 #         batch_size, num_class, h, w = pred.shape
 #         with torch.no_grad():
 #             # drop pixels with high entropy
-            
+
 #             entropy = -torch.sum(prob_teacher * torch.log(prob_teacher + self.eps), dim=1)
 
 #             thresh = np.percentile(
@@ -303,28 +336,31 @@ class EntropyClassMarginals(nn.Module):
 
 #         return loss
 
-    
+
 class PseudoLabel_Loss(nn.Module):
     def __init__(self):
-        super(PseudoLabel_Loss,self).__init__()
+        super(PseudoLabel_Loss, self).__init__()
         self.eps = 1e-6
-    
+
     def get_logits(self, prop):
         log_prior = torch.log(prop + self.eps)
         return log_prior
-        
+
     def forward(self, pred, target, drop_percent, prob_teacher):
         # drop pixels with high entropy
-        b, c, h, w  = pred.shape
+        b, c, h, w = pred.shape
         # neg_loss = 0
         # pdb.set_trace()
         with torch.no_grad():
-            entropy = -torch.sum(prob_teacher * torch.log(prob_teacher + self.eps), dim=1)
+            entropy = -torch.sum(
+                prob_teacher * torch.log(prob_teacher + self.eps), dim=1
+            )
             for i in range(c):
                 if torch.sum(entropy[target == i]) > 10:
 
                     thresh = np.percentile(
-                    entropy[target == i].detach().cpu().numpy().flatten(), drop_percent
+                        entropy[target == i].detach().cpu().numpy().flatten(),
+                        drop_percent,
                     )
                     thresh_mask = entropy.ge(thresh).bool() * (target == i).bool()
                     target[thresh_mask] = 255
@@ -334,28 +370,31 @@ class PseudoLabel_Loss(nn.Module):
                     # neg_loss += -torch.mean(neg_target * self.get_logits(1-neg_prob))
         weight = b * h * w / torch.sum(target != 255)
 
-        pos_loss = weight * F.cross_entropy(pred, target, ignore_index=255)  # [10, 321, 321]
-        
+        pos_loss = weight * F.cross_entropy(
+            pred, target, ignore_index=255
+        )  # [10, 321, 321]
+
         # loss = pos_loss + neg_loss
 
         return pos_loss
+
 
 # class PseudoLabel_Loss(nn.Module):
 #     def __init__(self):
 #         super(PseudoLabel_Loss,self).__init__()
 #         self.eps = 1e-6
-    
+
 #     def get_logits(self, prop):
 #         log_prior = torch.log(prop + self.eps)
 #         return log_prior
-        
+
 #     def forward(self, pred, prob, target, percent, entropy):
 #         # drop pixels with high entropy
 #         b, c, h, w  = pred.shape
 #         neg_loss = 0
 #         # pdb.set_trace()
 #         for i in range(c):
-            
+
 #             thresh = np.percentile(
 #             prob[:,i][target == i].detach().cpu().numpy().flatten(), percent
 #         )
@@ -367,34 +406,37 @@ class PseudoLabel_Loss(nn.Module):
 #             neg_loss += -torch.mean(neg_target * self.get_logits(1-neg_prob))
 
 #         pos_loss = F.cross_entropy(pred, target, ignore_index=255)  # [10, 321, 321]
-        
+
 #         loss = pos_loss + neg_loss
 
 #         return loss
 
+
 class Curriculum_Style_Entropy_Loss(nn.Module):
-    def __init__(self,alpha=0.002,gamma=2):
+    def __init__(self, alpha=0.002, gamma=2):
         super(Curriculum_Style_Entropy_Loss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
 
-    
     def forward(self, probs) -> torch.Tensor:
-        probs = rearrange(probs, 'b c h w -> (b h w) c')
-        probs = F.softmax(probs,dim=1)
+        probs = rearrange(probs, "b c h w -> (b h w) c")
+        probs = F.softmax(probs, dim=1)
         entropy_map = torch.sum(-probs * torch.log(probs + 1e-6), dim=1)
-        probs_hat = torch.mean(torch.exp(-3 * entropy_map).unsqueeze(dim=1) * probs, dim=0)
-        loss_cel = self.alpha * ((1.7-entropy_map) ** self.gamma) * entropy_map
+        probs_hat = torch.mean(
+            torch.exp(-3 * entropy_map).unsqueeze(dim=1) * probs, dim=0
+        )
+        loss_cel = self.alpha * ((1.7 - entropy_map) ** self.gamma) * entropy_map
         loss_div = torch.sum(-probs_hat * torch.log(probs_hat + 1e-6))
         # pdb.set_trace()
-        
-        return loss_cel.mean()+loss_div
+
+        return loss_cel.mean() + loss_div
 
 
 def intra_class_variance(prob, img):
-    mean_std = torch.std(img * prob, dim=[2,3])
+    mean_std = torch.std(img * prob, dim=[2, 3])
     return mean_std.mean()
 
+
 def inter_class_variance(prob, img):
-    mean_std = torch.std(torch.mean(img * prob, dim=[2,3]), dim=1)
+    mean_std = torch.std(torch.mean(img * prob, dim=[2, 3]), dim=1)
     return mean_std.mean()

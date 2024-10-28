@@ -4,13 +4,17 @@ from collections import (
     deque,
 )  # just for fun using dequeue instead of just a list for faster appends
 from pprint import pprint
-from ..models.model_factory import ModelRegister 
+from ..models.model_factory import ModelRegister
 from ..batch_iterators.trainer_factory import TrainerRegister
 
-def get_model_options(): 
+
+def get_model_options():
     return list(ModelRegister.get_models())
+
+
 def get_trainer_options():
     return list(TrainerRegister.get_models())
+
 
 class LoadFromFile(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -36,7 +40,7 @@ class LoadFromFile(argparse.Action):
 
 
 def parse_bool(s: str):
-    return  s.lower() == 'true'
+    return s.lower() == "true"
 
 
 def warn_optuna(s: str):
@@ -120,7 +124,11 @@ def build_args():
         help="This is the orientation of the MRI/CT. Careful when selecting",
     )
     parser.add_argument(
-        "--device", type=json.loads, required=True, default=["cuda:0"], help="GPU parameter"
+        "--device",
+        type=json.loads,
+        required=True,
+        default=["cuda:0"],
+        help="GPU parameter",
     )
     parser.add_argument(
         "--run_param_search",
@@ -159,21 +167,20 @@ def build_args():
     parser.add_argument("--lbl_key_name", required=True, type=str)
     parser.add_argument("--batch_size", required=True, type=int)
     parser.add_argument("--cache_dir", type=str, required=True)
-    parser.add_argument('--label_vals',type=json.loads,required=True)
+    parser.add_argument("--label_vals", type=json.loads, required=True)
     parser.add_argument(
-        "--train_mode",
-        type=str,
-        required=True,
-        choices= get_trainer_options()
+        "--train_mode", type=str, required=True, choices=get_trainer_options()
     )
-    parser.add_argument("--log_dir", type=str, required=True) 
-    parser.add_argument("--2Dvs3D",type=str,required=True,choices=['2D','3D'])
-    parser.add_argument('--seed',type=int,default=349)
-    parser.add_argument("--resize_size",type=json.loads,required=False)
-    parser.add_argument("--model_weight",type=str,required=False)
-    parser.add_argument("--balance_phases",type=parse_bool,required=False,default=False)
-    parser.add_argument("--resume",type=parse_bool,required=False,default=False)
-    parser.add_argument("--source_model_weight",type=str,required=False,default=None)
+    parser.add_argument("--log_dir", type=str, required=True)
+    parser.add_argument("--2Dvs3D", type=str, required=True, choices=["2D", "3D"])
+    parser.add_argument("--seed", type=int, default=349)
+    parser.add_argument("--resize_size", type=json.loads, required=False)
+    parser.add_argument("--model_weight", type=str, required=False)
+    parser.add_argument(
+        "--balance_phases", type=parse_bool, required=False, default=False
+    )
+    parser.add_argument("--resume", type=parse_bool, required=False, default=False)
+    parser.add_argument("--source_model_weight", type=str, required=False, default=None)
     add_rand_crop_params(parser)
     add_rand_flip_params(parser)
     add_rand_affine_params(parser)
@@ -182,46 +189,53 @@ def build_args():
 
     return parser
 
-def build_test_args(): 
+
+def build_test_args():
     parser = argparse.ArgumentParser(
         description="Confguration for my deep learning model testing for segmentation"
     )
-    parser.add_argument('--config_path',required=False,type=open,action=LoadFromFile)
-    parser.add_argument('--model_weight',required=True) 
-    parser.add_argument('--output_dir',required=True)
-    parser.add_argument('--device',default='cuda:0',type=json.loads,required=True)
-    parser.add_argument("--metrics_path",required=True )
-    parser.add_argument("--test_set",type=str,required=False,default=False)
-    parser.add_argument("--trainer",required=True)
+    parser.add_argument("--config_path", required=False, type=open, action=LoadFromFile)
+    parser.add_argument("--model_weight", required=True)
+    parser.add_argument("--output_dir", required=True)
+    parser.add_argument("--device", default="cuda:0", type=json.loads, required=True)
+    parser.add_argument("--metrics_path", required=True)
+    parser.add_argument("--test_set", type=str, required=False, default=False)
+    parser.add_argument("--trainer", required=True)
     return parser
-def build_infer_args(): 
+
+
+def build_infer_args():
     parser = argparse.ArgumentParser(
         description="Confguration to run inference of my model"
     )
-    parser.add_argument('--config_path',required=False,type=open,action=LoadFromFile)
-    parser.add_argument('--model_weight',required=False) 
-    parser.add_argument('--pkl_path',required=False)
-    parser.add_argument('--output_dir',required=False)
-    parser.add_argument('--device',default='cuda:0',required=False)
-    parser.add_argument("--trainer",required=True)
+    parser.add_argument("--config_path", required=False, type=open, action=LoadFromFile)
+    parser.add_argument("--model_weight", required=False)
+    parser.add_argument("--pkl_path", required=False)
+    parser.add_argument("--output_dir", required=False)
+    parser.add_argument("--device", default="cuda:0", required=False)
+    parser.add_argument("--trainer", required=True)
     return parser
 
 
 def get_params():
     args = build_args()
     my_args = args.parse_args()
-    arg_dict = vars(my_args) 
+    arg_dict = vars(my_args)
     return arg_dict
-def get_test_params(): 
-    args = build_test_args() 
+
+
+def get_test_params():
+    args = build_test_args()
     my_args = args.parse_args()
-    arg_dict = vars(my_args) 
-    return arg_dict 
+    arg_dict = vars(my_args)
+    return arg_dict
+
+
 def get_infer_params():
-    args = build_infer_args() 
+    args = build_infer_args()
     my_args = args.parse_args()
-    arg_dict = vars(my_args) 
-    return arg_dict 
+    arg_dict = vars(my_args)
+    return arg_dict
 
 
 def add_rand_crop_params(parser):
