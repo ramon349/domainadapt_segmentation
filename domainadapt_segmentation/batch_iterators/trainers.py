@@ -172,6 +172,9 @@ class DiceTrainer(object):
                     roi_size=roi_size,
                     sw_batch_size=1,
                     predictor=self.model,
+                    sw_device=self.device,
+                    device='cpu'
+                    
                 )
                 val_data['pred_meta_dict'] = val_data['image_meta_dict']
                 val_outputs = [post_pred(i).to('cpu') for i in decollate_batch(val_data['pred'])]

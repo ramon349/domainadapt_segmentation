@@ -189,7 +189,7 @@ def build_test_args():
     parser.add_argument('--config_path',required=False,type=open,action=LoadFromFile)
     parser.add_argument('--model_weight',required=True) 
     parser.add_argument('--output_dir',required=True)
-    parser.add_argument('--device',default='cuda:0',required=False)
+    parser.add_argument('--device',default='cuda:0',type=json.loads,required=True)
     parser.add_argument("--metrics_path",required=True )
     parser.add_argument("--test_set",type=str,required=False,default=False)
     parser.add_argument("--trainer",required=True)

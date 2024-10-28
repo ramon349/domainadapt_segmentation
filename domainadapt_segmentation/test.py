@@ -30,12 +30,17 @@ from .batch_iterators.trainer_factory import load_trainer
 from .helper_utils.transforms import make_post_transforms
 def test_main():
     config = help_configs.get_test_params() 
+    config['rank'] = 0
     #load the model 
     weight_path = config['model_weight'] 
 
     train_conf, weights = help_utils.load_weights(weight_path=weight_path)
+    train_conf['device'] = config['device'] 
+    train_conf['rank'] = config['rank']
     model= model_factory(config=train_conf) 
     model.load_state_dict(weights) 
+    device = config['device'][0]
+    model = model.to(device)
     #load the test_pkl of interest
     with open(config['test_set'],'rb') as f: 
         test = pkl.load(f)
