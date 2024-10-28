@@ -1,2 +1,3 @@
 from .train_iterators import *
-from . import trainers
+from .BasicTrainer import * 
+from .ConfusionTrainers import * 
