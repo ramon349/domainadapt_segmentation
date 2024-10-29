@@ -26,7 +26,7 @@ Repository for benchmarking code for domain adaptation of 3D segmentation models
 -  We use monai dataloaders which expect the data to be given as a list of dictionarities 
 - We have pkl_contents= (train_set,val_set,test_set)
 - Each of the train test splits is a list of dictionaries 
-``` json 
+```  python  
 train_set = [
     {'image':PathToVolume.nii.gz,
     'label':PathToMaskVolume.nii.gz,
