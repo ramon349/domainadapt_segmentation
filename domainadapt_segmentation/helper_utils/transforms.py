@@ -33,7 +33,7 @@ import numpy as np
 from monai.transforms.croppad.array import CenterSpatialCrop
 from monai.data.utils import list_data_collate
 from hashlib import sha224
-
+from .bezier_transforms import Bezierd
 
 def subject_formater(metadict, ignore):
     pid = metadict["filename_or_obj"]
@@ -185,6 +185,9 @@ def get_transform(name, conf, mode="train"):
             mode=["trilinear ", "nearest"],
             spatial_size=resize_size,
         )
+    if name =='bezier': 
+        return Bezierd(keys=[img_k],b1=[0.25,0.75],b2=[0.5,0.75],label_key=lbl_k) 
+
     raise ValueError(
         f"The param name {name} does not have  a match check typo in config or update transforms.get_transform.py"
     )
