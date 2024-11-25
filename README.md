@@ -21,6 +21,14 @@ Repository for benchmarking code for domain adaptation of 3D segmentation models
     - metrics_path: this is a directory where we will store the disce score
     - device: wich GPU to run inference on 
     - test set: the pickle file we will like to run inference on and evaluate performance 
+# Running Inference Only 
+- Fill out the parameters in example_configs/infer_example.json
+- The parameters are as follows: 
+    - model_weight: path to weights. Two model weights are available at: [gdrive](https://drive.google.com/file/d/1fqGpBxnQp8TnLc_G0BDxnMqvS7tvy3or/view?usp=sharing)
+    - output_dir: directory to save output_segmentations 
+    - mapping_path: a csv that will give you two columns. path_of_input, path_output_seg 
+    - pkl_path: pickle path  to test data organized like bellow
+    - trainer: DiceTrainer. Jus specifies the inference logic. 
 
 # What are the pickle files 
 -  We use monai dataloaders which expect the data to be given as a list of dictionarities 

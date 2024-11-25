@@ -192,7 +192,6 @@ class DiceTrainer(object):
         img_path = list()
         lbl_path = list()
         saved_path = list()
-        breakpoint()
         with torch.no_grad():
             for val_data in tqdm(loader, total=len(loader)):
                 val_inputs, val_labels = (

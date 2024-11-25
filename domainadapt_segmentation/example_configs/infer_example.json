@@ -1,0 +1,8 @@
+{
+ "model_weight": "PathTo/baseline.pth",
+ "output_dir": "DirToStoreSegmentations",
+ "mapping_path": "PathForMappingFile",
+ "device": ["cuda:3"],
+ "pkl_path": "TestData.pkl",
+ "trainer":"DiceTrainer"
+}
