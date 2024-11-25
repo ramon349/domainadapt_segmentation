@@ -45,7 +45,6 @@ def makeWeightedsampler(ds):
     sample_weight = torch.tensor(sample_weight)
     return WeightedRandomSampler(sample_weight, len(sample_weight))
 
-
 def optuna_gen(conf_in, trial):
     pass
 
@@ -58,7 +57,6 @@ def _parse():
         dummy_main(0, 1, conf)
     else:
         mp.spawn(dummy_main, args=(world_size, conf), nprocs=world_size, join=True)
-
 
 def get_data_laoders(conf):
     train, val, test = help_io.load_data(
@@ -95,7 +93,7 @@ def get_data_laoders(conf):
     tr_dset = dset(tr_part, transform=train_transform, cache_dir=cache_dir)
     val_dset = dset(val_part, transform=val_transform, cache_dir=cache_dir)
     test_dset = dset(test, transform=val_transform, cache_dir=cache_dir)
-    if conf["balance_phases"]:
+    if conf["balance_phases"]:  
         print("PHASE BALANCE IS ENABLED")
         sampler = makeWeightedsampler(tr_part)
         shuffle = False

@@ -3,11 +3,10 @@ __pycache__/
 model_logs/
 model_checkpoints/
 *.csv 
-*.ipnb 
 *.dcm  
-notebooks/
 test_dir/ 
 domainadapt_segmentation/results
 domainadapt_segmentation.egg-info/
 build/
+datasets/
 secrets_folder/

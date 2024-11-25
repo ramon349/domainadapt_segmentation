@@ -2,6 +2,7 @@ README.md
 setup.py
 domainadapt_segmentation/__init__.py
 domainadapt_segmentation/infer.py
+domainadapt_segmentation/infer_dicom.py
 domainadapt_segmentation/test.py
 domainadapt_segmentation/train.py
 domainadapt_segmentation.egg-info/PKG-INFO
@@ -22,6 +23,7 @@ domainadapt_segmentation/helper_utils/configs.py
 domainadapt_segmentation/helper_utils/data_io.py
 domainadapt_segmentation/helper_utils/losses.py
 domainadapt_segmentation/helper_utils/source_seg_loss.py
+domainadapt_segmentation/helper_utils/proto_losses.py
 domainadapt_segmentation/helper_utils/transforms.py
 domainadapt_segmentation/helper_utils/utils.py
 domainadapt_segmentation/models/UnetProto.py
