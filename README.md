@@ -12,7 +12,6 @@ Repository for benchmarking code for domain adaptation of 3D segmentation models
 - Train models using 
 - python3 -m domainadapt_segmentation.train --config_path ./domainadapt_segmentation/example_configs/train_baseline.json 
 - You can specify your own configs in another directory 
-
 # Testing Models 
 - How to test the model is also as simple as specifying a config file.
 - An example is found in  ./domainadapt_segmentation/example_configs/test_baseline.json. You must specify the following 
@@ -21,6 +20,9 @@ Repository for benchmarking code for domain adaptation of 3D segmentation models
     - metrics_path: this is a directory where we will store the disce score
     - device: wich GPU to run inference on 
     - test set: the pickle file we will like to run inference on and evaluate performance 
+``` bash 
+python3 -m domainadapt_segmentation.test --config_path ./path_to_test.json
+``` 
 # Running Inference Only 
 - Fill out the parameters in example_configs/infer_example.json
 - The parameters are as follows: 
@@ -28,7 +30,10 @@ Repository for benchmarking code for domain adaptation of 3D segmentation models
     - output_dir: directory to save output_segmentations 
     - mapping_path: a csv that will give you two columns. path_of_input, path_output_seg 
     - pkl_path: pickle path  to test data organized like bellow
-    - trainer: DiceTrainer. Jus specifies the inference logic. 
+    - trainer: DiceTrainer. Jus specifies the inference logic.
+``` bash
+python3 -m domainadapt_segmentation.infer --config_path ./path_to_infer.json
+``` 
 
 # What are the pickle files 
 -  We use monai dataloaders which expect the data to be given as a list of dictionarities 
