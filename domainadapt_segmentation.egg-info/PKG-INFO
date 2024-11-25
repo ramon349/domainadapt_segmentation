@@ -19,6 +19,7 @@ Requires-Dist: arrow==1.3.0
 Requires-Dist: asttokens==2.4.1
 Requires-Dist: async-timeout==4.0.3
 Requires-Dist: attrs==23.1.0
+Requires-Dist: black==24.10.0
 Requires-Dist: blinker==1.6.2
 Requires-Dist: Bottleneck==1.3.7
 Requires-Dist: Brotli==1.0.9
@@ -35,6 +36,7 @@ Requires-Dist: cycler==0.11.0
 Requires-Dist: debugpy==1.6.7
 Requires-Dist: decorator==5.1.1
 Requires-Dist: dicom2nifti==2.4.10
+Requires-Dist: einops==0.8.0
 Requires-Dist: exceptiongroup==1.2.0
 Requires-Dist: executing==2.0.1
 Requires-Dist: filelock==3.13.1
@@ -53,6 +55,7 @@ Requires-Dist: importlib_metadata==7.1.0
 Requires-Dist: importlib-resources==6.1.1
 Requires-Dist: ipykernel==6.29.3
 Requires-Dist: ipython==8.22.2
+Requires-Dist: ipywidgets==8.1.3
 Requires-Dist: itk==5.4.0
 Requires-Dist: itk-core==5.4.0
 Requires-Dist: itk-filtering==5.4.0
@@ -65,8 +68,9 @@ Requires-Dist: Jinja2==3.1.3
 Requires-Dist: joblib==1.4.0
 Requires-Dist: jupyter_client==8.6.1
 Requires-Dist: jupyter_core==5.7.2
+Requires-Dist: jupyterlab_widgets==3.0.11
 Requires-Dist: kiwisolver==1.4.4
-Requires-Dist: lazy_loader==0.3
+Requires-Dist: lazy_loader==0.4
 Requires-Dist: Mako==1.2.3
 Requires-Dist: Markdown==3.4.1
 Requires-Dist: MarkupSafe==2.1.3
@@ -80,9 +84,11 @@ Requires-Dist: monai==1.3.0
 Requires-Dist: mpmath==1.3.0
 Requires-Dist: multidict==6.0.4
 Requires-Dist: munkres==1.1.4
+Requires-Dist: mypy-extensions==1.0.0
 Requires-Dist: nest_asyncio==1.6.0
 Requires-Dist: networkx==3.1
 Requires-Dist: nibabel==5.2.1
+Requires-Dist: nptyping==2.5.0
 Requires-Dist: numexpr==2.8.7
 Requires-Dist: numpy==1.26.4
 Requires-Dist: oauthlib==3.2.2
@@ -91,6 +97,7 @@ Requires-Dist: optuna==3.6.0
 Requires-Dist: packaging==23.2
 Requires-Dist: pandas==2.2.1
 Requires-Dist: parso==0.8.4
+Requires-Dist: pathspec==0.12.1
 Requires-Dist: pexpect==4.9.0
 Requires-Dist: pickleshare==0.7.5
 Requires-Dist: pillow==10.2.0
@@ -108,6 +115,7 @@ Requires-Dist: pycparser==2.21
 Requires-Dist: pydicom==2.4.4
 Requires-Dist: Pygments==2.17.2
 Requires-Dist: PyJWT==2.4.0
+Requires-Dist: pynrrd==1.0.0
 Requires-Dist: pyOpenSSL==24.0.0
 Requires-Dist: pyparsing==3.0.9
 Requires-Dist: PyQt5==5.15.10
@@ -122,7 +130,7 @@ Requires-Dist: requests==2.31.0
 Requires-Dist: requests-oauthlib==1.3.0
 Requires-Dist: retrying==1.3.4
 Requires-Dist: rsa==4.7.2
-Requires-Dist: scikit-image==0.22.0
+Requires-Dist: scikit-image==0.23.1
 Requires-Dist: scikit-learn==1.4.2
 Requires-Dist: scipy==1.13.0
 Requires-Dist: seaborn==0.13.2
@@ -153,6 +161,7 @@ Requires-Dist: urllib3==2.1.0
 Requires-Dist: wcwidth==0.2.13
 Requires-Dist: Werkzeug==2.3.8
 Requires-Dist: wheel==0.41.2
+Requires-Dist: widgetsnbextension==4.0.11
 Requires-Dist: yarl==1.9.3
 Requires-Dist: zipp==3.17.0
 

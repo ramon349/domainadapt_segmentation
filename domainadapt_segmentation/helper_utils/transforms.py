@@ -16,6 +16,11 @@ from monai.transforms import (
     SqueezeDimd,
     Resized,
     SpatialPad,
+    Compose,
+    AsDiscreted,
+    Invertd,
+    SaveImaged,
+    RemoveSmallObjectsd,
 )
 from monai.data import NibabelReader
 import torch
@@ -27,21 +32,60 @@ from monai.transforms.croppad.batch import PadListDataCollate, replace_element
 import numpy as np
 from monai.transforms.croppad.array import CenterSpatialCrop
 from monai.data.utils import list_data_collate
+from hashlib import sha224
+from .bezier_transforms import Bezierd
+
+def subject_formater(metadict, ignore):
+    pid = metadict["filename_or_obj"]
+    out_form = sha224(pid.encode("utf-8")).hexdigest()
+    return {"subject": f"{out_form}", "idx": "0"}
 
 
-def get_transform(name, conf,mode='train'):
+def make_post_transforms(test_conf, test_transforms):
+    out_dir = test_conf["output_dir"]
+    bin_preds = True  # TODO: is it woth having continious outputs
+    post_transforms = Compose(
+        [
+            Invertd(
+                keys=["pred"],
+                orig_keys=["pred"],
+                orig_meta_keys=["image_meta_dict"],
+                transform=test_transforms,
+                nearest_interp=False,
+                meta_keys=["seg_info"],
+                to_tensor=True,
+            ),
+            AsDiscreted(keys="pred", argmax=True),
+            RemoveSmallObjectsd(keys="pred", min_size=500),
+            SaveImaged(
+                keys="pred",
+                meta_keys="pred_meta_dict",
+                output_dir=out_dir,
+                output_postfix="seg",
+                resample=False,
+                data_root_dir="",
+                output_name_formatter=subject_formater,
+                savepath_in_metadict=True,
+                meta_key_postfix="",
+            ),
+        ]
+    )
+    return post_transforms
+
+
+def get_transform(name, conf, mode="train"):
     img_k = conf["img_key_name"]
     lbl_k = conf["lbl_key_name"]
-    if mode=='train' or mode=='test': 
-        transform_ins = [img_k,lbl_k]
-    if mode=='infer': 
+    if mode == "train" or mode == "test":
+        transform_ins = [img_k, lbl_k]
+    if mode == "infer":
         transform_ins = [img_k]
     if img_k == lbl_k:
         raise AssertionError("Image Key and Label Key should not be the same")
     if name == "load":
         # for now reader will only be the nibabel one
         # TODO make it interchangeable with the GCP one
-        return LoadImaged(keys=transform_ins,reader=NibabelReader,image_only=False)
+        return LoadImaged(keys=transform_ins, reader=NibabelReader, image_only=False)
     if name == "channel_first":
         return EnsureChannelFirstd(keys=transform_ins)
     if name == "scale_intensity":
@@ -63,13 +107,11 @@ def get_transform(name, conf,mode='train'):
         vox_dim = conf["spacing_vox_dim"]
         img_interp = conf["spacing_img_interp"]
         lbl_interp = conf["spacing_lbl_interp"]
-        if len(transform_ins)==2: 
-            interp_mode= (img_interp,lbl_interp)
-        else: 
+        if len(transform_ins) == 2:
+            interp_mode = (img_interp, lbl_interp)
+        else:
             interp_mode = (img_interp,)
-        return Spacingd(
-            keys=transform_ins, pixdim=pix_dim, mode=interp_mode
-        )
+        return Spacingd(keys=transform_ins, pixdim=pix_dim, mode=interp_mode)
     if name == "rand_crop_label":
         vox_dim = conf["spacing_vox_dim"]
         num_samples = conf["rand_crop_label_num_samples"]
@@ -87,16 +129,16 @@ def get_transform(name, conf,mode='train'):
             allow_smaller=False,
         )
     if name == "spatial_pad_l":
-        vox_dim = conf["spacing_vox_dim"] 
-        if conf['2Dvs3D'] =='3D': 
+        vox_dim = conf["spacing_vox_dim"]
+        if conf["2Dvs3D"] == "3D":
             return SpatialPadd(keys=transform_ins, spatial_size=vox_dim)
-        if conf['2Dvs3D'] =='2D': 
+        if conf["2Dvs3D"] == "2D":
             return SpatialPadd(keys=transform_ins, spatial_size=vox_dim[:2])
         raise ValueError("The 3D or 2D configuration must be carefully adjusted")
     if name == "spatial_pad_f":
-        vox_dim = conf["spacing_vox_dim"]  
-        if vox_dim[-1]== 1: 
-            vox_dim[-1]= -1 
+        vox_dim = conf["spacing_vox_dim"]
+        if vox_dim[-1] == 1:
+            vox_dim[-1] = -1
         return SpatialPadd(keys=transform_ins, spatial_size=vox_dim)
         raise ValueError("The 3D or 2D configuration must be carefully adjusted")
 
@@ -106,15 +148,13 @@ def get_transform(name, conf,mode='train'):
         return RandShiftIntensityd(keys=[img_k], offsets=offset, prob=prob)
     if name == "rand_gauss":
         # TODO: SEARCH FOR REASONING TO HAVE VARIABLE X,Y,Z. I guess it would pick up on extra noise from resampling volumes?
-        sigma_x = conf["rand_gauss_sigma"]  
-        if conf['2Dvs3D']=='3D': 
+        sigma_x = conf["rand_gauss_sigma"]
+        if conf["2Dvs3D"] == "3D":
             return RandGaussianSmoothd(
                 keys=[img_k], sigma_x=sigma_x, sigma_y=sigma_x, sigma_z=sigma_x
-            ) 
-        if conf['2Dvs3D']=='2D': 
-            return RandGaussianSmoothd(
-                keys=[img_k], sigma_x=sigma_x, sigma_y=sigma_x 
-            ) 
+            )
+        if conf["2Dvs3D"] == "2D":
+            return RandGaussianSmoothd(keys=[img_k], sigma_x=sigma_x, sigma_y=sigma_x)
     if name == "rand_flip":
         prob = conf["rand_flip_prob"]
         return RandFlipd(keys=transform_ins, prob=prob)
@@ -130,15 +170,24 @@ def get_transform(name, conf,mode='train'):
             prob=affine_prob,
             scale_range=scale_range,
             rotate_range=rotation_range,
-        ) #TODO: do i modify the border of the trianing of my model?  default was reflection. but should i use border padding instead?
-    if name =='labelMask':
-        label_vals = conf['label_vals']
-        return LabelToMaskd(select_labels=label_vals,keys=[lbl_k],merge_channels=False)
-    if name=='squeezeDim': 
-        return SqueezeDimd(keys=[img_k,lbl_k],dim=-1) 
-    if name=='resize': 
-        resize_size= conf['resize_size']
-        return Resized(keys=[img_k,lbl_k],mode=['trilinear ','nearest'],spatial_size=resize_size)
+        )  # TODO: do i modify the border of the trianing of my model?  default was reflection. but should i use border padding instead?
+    if name == "labelMask":
+        label_vals = conf["label_vals"]
+        return LabelToMaskd(
+            select_labels=label_vals, keys=[lbl_k], merge_channels=False
+        )
+    if name == "squeezeDim":
+        return SqueezeDimd(keys=[img_k, lbl_k], dim=-1)
+    if name == "resize":
+        resize_size = conf["resize_size"]
+        return Resized(
+            keys=[img_k, lbl_k],
+            mode=["trilinear ", "nearest"],
+            spatial_size=resize_size,
+        )
+    if name =='bezier': 
+        return Bezierd(keys=[img_k],b1=[0.25,0.75],b2=[0.5,0.75],label_key=lbl_k) 
+
     raise ValueError(
         f"The param name {name} does not have  a match check typo in config or update transforms.get_transform.py"
     )
@@ -152,15 +201,17 @@ def gen_transforms(confi):
     return train_transform, val_transform
 
 
-def gen_test_transforms(confi,mode='test'):
-    my_transforms = list() 
-    for e in confi['test_transforms']:
-        if e =='labelMask' and mode=='infer':
-            continue 
-        l_transform = get_transform(e,confi,mode=mode)
+def gen_test_transforms(confi, mode="test"):
+    my_transforms = list()
+    for e in confi["test_transforms"]:
+        if e == "labelMask" and mode == "infer":
+            continue
+        l_transform = get_transform(e, confi, mode=mode)
         print(l_transform)
         my_transforms.append(l_transform)
-    val_transform = Compose(my_transforms) #Compose([get_transform(e, confi) for e in confi["test_transforms"]])
+    val_transform = Compose(
+        my_transforms
+    )  # Compose([get_transform(e, confi) for e in confi["test_transforms"]])
     return val_transform
 
 
