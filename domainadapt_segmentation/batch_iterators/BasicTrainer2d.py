@@ -7,10 +7,9 @@ import torch
 from monai.inferers import sliding_window_inference
 from torch.nn import PairwiseDistance
 from monai.data import decollate_batch
+from .trainer_factory import  TrainerRegister 
 
-
-
-
+@TrainerRegister.register("DualNormTrainer")
 class Dice2DTrainer(DiceTrainer): 
     def __init__(self, model, tb_writter=None, conf=None, dl_dict=None):
         super(Dice2DTrainer,self).__init__(model=model,tb_writter=tb_writter,conf=conf,dl_dict=dl_dict)

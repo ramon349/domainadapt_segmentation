@@ -192,6 +192,7 @@ class DiceTrainer(object):
         img_path = list()
         lbl_path = list()
         saved_path = list()
+        breakpoint()
         with torch.no_grad():
             for val_data in tqdm(loader, total=len(loader)):
                 val_inputs, val_labels = (
@@ -239,6 +240,7 @@ class DiceTrainer(object):
         self.model = self.model.eval()
         img_path = list()
         saved_path = list()
+        breakpoint()
         with torch.no_grad():
             for val_data in tqdm(self.dl_dict['infer'] , total=len(self.dl_dict['infer'])):
                 val_inputs = val_data[img_k].to(self.device)

@@ -25,7 +25,10 @@ def infer_main():
     model = model.to(device)
     with open(config["pkl_path"], "rb") as f:
         test = pkl.load(f)
-        test = test  # TODO: DON'T KEEP THIS FOREVER
+        if len(test)==3: 
+            test = test[-1]
+        else:
+            test = test  # TODO: DON'T KEEP THIS FOREVER
     dset = kit_factory("basic")  # dset that is not cached
     test_t = help_transforms.gen_test_transforms(confi=train_conf, mode="infer")
     test_ds = dset(test, transform=test_t)
