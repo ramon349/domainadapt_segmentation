@@ -239,7 +239,6 @@ class DiceTrainer(object):
         self.model = self.model.eval()
         img_path = list()
         saved_path = list()
-        breakpoint()
         with torch.no_grad():
             for val_data in tqdm(self.dl_dict['infer'] , total=len(self.dl_dict['infer'])):
                 val_inputs = val_data[img_k].to(self.device)
@@ -252,7 +251,7 @@ class DiceTrainer(object):
                     device='cpu' 
 
                 )
-                val_store = [post_t(i) for i in decollate_batch(val_data)]
+                val_store = [post_t(i) for i in decollate_batch(val_data)] 
                 stored_path = [e['pred'].meta['saved_to'] for e in val_store] 
                 saved_path.append(stored_path[0])
                 img_path.append(val_data["image_meta_dict"]["filename_or_obj"][0])

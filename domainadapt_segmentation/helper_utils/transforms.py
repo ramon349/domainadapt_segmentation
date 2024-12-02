@@ -48,7 +48,7 @@ def make_post_transforms(test_conf, test_transforms):
         [
             Invertd(
                 keys=["pred"],
-                orig_keys=["pred"],
+                orig_keys=["image"],
                 orig_meta_keys=["image_meta_dict"],
                 transform=test_transforms,
                 nearest_interp=False,
